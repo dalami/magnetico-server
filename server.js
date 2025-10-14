@@ -3,29 +3,51 @@ import cors from "cors";
 import multer from "multer";
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
-import payRoutes from "./routes/pay.js";
+import payRoutes from "./routes/orderRoutes.js"; // o "./routes/orderRoutes.js" si tu archivo se llama así
 
 dotenv.config();
 const app = express();
 
-// ✅ CORS — permití solo tu dominio de Vercel
+// ✅ CORS - permite tu frontend de Vercel y local
 app.use(
   cors({
-    origin: ["https://magnetico-app.vercel.app", "http://localhost:5173"],
-    methods: ["GET", "POST"],
+    origin: [
+      "https://magnetico-app.vercel.app",
+      "http://localhost:5173",
+      "http://localhost:3000",
+    ],
+    methods: ["GET", "POST", "OPTIONS"],
+    allowedHeaders: ["Content-Type", "Authorization"],
   })
 );
 
+// 🔥 Agrega esta línea extra para prevenir bloqueos de Render
+app.use((req, res, next) => {
+  res.header(
+    "Access-Control-Allow-Origin",
+    "https://magnetico-app.vercel.app"
+  );
+  res.header(
+    "Access-Control-Allow-Headers",
+    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
+  );
+  if (req.method === "OPTIONS") {
+    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+    return res.status(200).json({});
+  }
+  next();
+});
+
 app.use(express.json());
 
-// ✅ Multer en memoria para manejar imágenes
+// ✅ Configuración Multer (archivos en memoria)
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// ✅ Rutas
+// ✅ Rutas principales
 app.use("/api/pay", payRoutes);
 
-// ✅ Webhook de Mercado Pago
+// ✅ Webhook Mercado Pago
 app.post("/api/webhook", express.json(), (req, res) => {
   try {
     console.log("🟢 Webhook recibido:", req.body);
@@ -36,18 +58,22 @@ app.post("/api/webhook", express.json(), (req, res) => {
   }
 });
 
-// ✅ Envío de pedido por email
+// ✅ Envío de pedido por correo
 app.post("/api/orders", upload.array("photos"), async (req, res) => {
   const { name, email } = req.body;
   const files = req.files;
 
-  if (!email || !files?.length)
+  if (!email || !files?.length) {
     return res.status(400).json({ error: "Faltan datos o archivos." });
+  }
 
   try {
     const transporter = nodemailer.createTransport({
       service: "gmail",
-      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
     });
 
     const attachments = files.map((file) => ({
@@ -63,14 +89,15 @@ app.post("/api/orders", upload.array("photos"), async (req, res) => {
       attachments,
     });
 
-    res.json({ message: "Pedido enviado correctamente" });
+    res.json({ message: "Pedido enviado correctamente ✅" });
   } catch (error) {
     console.error("❌ Error al enviar email:", error);
     res.status(500).json({ error: "Error al enviar el pedido." });
   }
 });
 
-// ✅ Render usa process.env.PORT, no puerto fijo
+// ✅ Puerto dinámico (Render)
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`🚀 Servidor corriendo en puerto ${PORT}`));
-
+app.listen(PORT, () =>
+  console.log(`🚀 Servidor corriendo correctamente en puerto ${PORT}`)
+);
