@@ -1,0 +1,8 @@
+# Ignorar dependencias
+node_modules/
+# Ignorar archivos de entorno
+.env
+# Ignorar build de Vite
+dist/
+# Ignorar uploads locales
+uploads/
