@@ -1,79 +1,49 @@
-import express from "express";
 import cors from "cors";
+import express from "express";
 import multer from "multer";
 import nodemailer from "nodemailer";
 import dotenv from "dotenv";
-import payRoutes from "./routes/orderRoutes.js"; // o "./routes/orderRoutes.js" si tu archivo se llama así
+import payRoutes from "./routes/orderRoutes.js";
+
 
 dotenv.config();
 const app = express();
 
-// ✅ CORS - permite tu frontend de Vercel y local
-app.use(
-  cors({
-    origin: [
-      "https://magnetico-app.vercel.app",
-      "http://localhost:5173",
-      "http://localhost:3000",
-    ],
-    methods: ["GET", "POST", "OPTIONS"],
-    allowedHeaders: ["Content-Type", "Authorization"],
-  })
-);
-
-// 🔥 Agrega esta línea extra para prevenir bloqueos de Render
+// ✅ CORS: permitir explícitamente Vercel y opciones preflight
 app.use((req, res, next) => {
-  res.header(
-    "Access-Control-Allow-Origin",
-    "https://magnetico-app.vercel.app"
-  );
-  res.header(
-    "Access-Control-Allow-Headers",
-    "Origin, X-Requested-With, Content-Type, Accept, Authorization"
-  );
+  res.header("Access-Control-Allow-Origin", "https://magnetico-app.vercel.app");
+  res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
   if (req.method === "OPTIONS") {
-    res.header("Access-Control-Allow-Methods", "GET, POST, OPTIONS");
-    return res.status(200).json({});
+    return res.sendStatus(200);
   }
   next();
 });
 
 app.use(express.json());
-
-// ✅ Configuración Multer (archivos en memoria)
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
-// ✅ Rutas principales
+// ✅ Rutas
 app.use("/api/pay", payRoutes);
 
-// ✅ Webhook Mercado Pago
-app.post("/api/webhook", express.json(), (req, res) => {
-  try {
-    console.log("🟢 Webhook recibido:", req.body);
-    res.status(200).send("OK");
-  } catch (error) {
-    console.error("❌ Error en webhook:", error);
-    res.status(500).send("Error");
-  }
+// ✅ Endpoint de prueba (para verificar conexión)
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok" });
 });
 
-// ✅ Envío de pedido por correo
+// ✅ Envío de pedido
 app.post("/api/orders", upload.array("photos"), async (req, res) => {
   const { name, email } = req.body;
   const files = req.files;
 
-  if (!email || !files?.length) {
+  if (!email || !files?.length)
     return res.status(400).json({ error: "Faltan datos o archivos." });
-  }
 
   try {
     const transporter = nodemailer.createTransport({
       service: "gmail",
-      auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS,
-      },
+      auth: { user: process.env.EMAIL_USER, pass: process.env.EMAIL_PASS },
     });
 
     const attachments = files.map((file) => ({
@@ -96,8 +66,6 @@ app.post("/api/orders", upload.array("photos"), async (req, res) => {
   }
 });
 
-// ✅ Puerto dinámico (Render)
+// ✅ Render usa puerto dinámico
 const PORT = process.env.PORT || 5000;
-app.listen(PORT, () =>
-  console.log(`🚀 Servidor corriendo correctamente en puerto ${PORT}`)
-);
+app.listen(PORT, () => console.log(`🚀 Servidor corriendo en puerto ${PORT}`));
