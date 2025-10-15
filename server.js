@@ -22,6 +22,12 @@ app.use(express.json());
 const storage = multer.memoryStorage();
 const upload = multer({ storage });
 
+// ✅ Ruta de prueba
+app.get("/api/health", (req, res) => {
+  res.json({ status: "ok" });
+});
+
+
 // ✅ Ruta de pago
 app.use("/api/pay", payRoutes);
 
