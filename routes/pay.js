@@ -11,7 +11,7 @@ const app = express();
 // 🔥 CONFIGURACIÓN CORS CORRECTA
 app.use(
   cors({
-    origin: ["https://magnetico-app.vercel.app"], // dominio frontend
+    origin: ["https://magnetico-server-1.onrender.com"], // dominio frontend
     methods: ["GET", "POST"],
     allowedHeaders: ["Content-Type"],
   })
