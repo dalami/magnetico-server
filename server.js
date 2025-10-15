@@ -8,54 +8,65 @@ import helmet from "helmet";
 import compression from "compression";
 import multer from "multer";
 import nodemailer from "nodemailer";
+import payRoutes from "./routes/pay.js"; // <- tu ruta REST de MP
 
-import payRoutes from "./routes/pay.js";
-
+// ---- App base
 const app = express();
-
-// ── Seguridad/Performance
 app.set("trust proxy", 1);
 app.use(helmet());
 app.use(compression());
 
-// ── CORS
-const FRONTEND_URL = (process.env.FRONTEND_URL || "").replace(/\/+$/, "");
-const EXTRA_ORIGINS = (process.env.CORS_EXTRA_ORIGINS || "")
-  .split(",")
-  .map((s) => s.trim())
-  .filter(Boolean);
-app.use(
-  cors({
-    origin: [FRONTEND_URL, "http://localhost:5173", ...EXTRA_ORIGINS].filter(Boolean),
-    methods: ["GET", "POST"],
-    credentials: true,
-  })
-);
+// ---- CORS (Vercel + localhost)
+const FRONTEND_URL = (process.env.FRONTEND_URL || "https://magnetico-app.vercel.app").replace(/\/+$/,"");
 
-// ── Webhook MP: necesita RAW (declará ANTES de express.json)
-app.post(
-  "/api/webhook",
-  express.raw({ type: "application/json" }),
-  (req, res) => {
-    try {
-      console.log("🟢 Webhook MP recibido:", req.body?.toString() || "Sin cuerpo");
-      return res.status(200).send("OK");
-    } catch (e) {
-      console.error("❌ Error webhook:", e);
-      return res.sendStatus(500);
-    }
+app.use((req, _res, next) => {
+  // Log rápido para ver orígenes en logs de Render
+  console.log("Origin:", req.headers.origin || "(no origin)", " | Path:", req.path);
+  next();
+});
+
+app.use(cors({
+  origin(origin, cb) {
+    const allowList = new Set([
+      "http://localhost:5173",
+      FRONTEND_URL,
+    ]);
+    const ok =
+      !origin ||                      // curl / server-to-server
+      allowList.has(origin) ||
+      /\.vercel\.app$/.test(origin);  // previews *.vercel.app
+    cb(null, ok);
+  },
+  methods: ["GET","POST","OPTIONS"],
+  allowedHeaders: ["Content-Type","Authorization"],
+  credentials: false, // no cookies -> false
+}));
+app.options("*", cors()); // preflight para todo
+
+// ---- Webhook MP (RAW) — declarar ANTES del JSON parser
+app.post("/api/webhook", express.raw({ type: "application/json" }), (req, res) => {
+  try {
+    console.log("🟢 Webhook MP:", req.body?.toString() || "(sin cuerpo)");
+    return res.status(200).send("OK");
+  } catch (e) {
+    console.error("❌ Webhook error:", e?.message || e);
+    return res.sendStatus(500);
   }
-);
+});
 
+// ---- Body parser JSON
+app.use(express.json({ limit: "10mb" }));
+
+// ---- Health y raíz
 app.get("/", (_req, res) => res.send("Magnetico API running ✅"));
 app.get("/api/health", (_req, res) =>
   res.json({ status: "ok", ts: new Date().toISOString() })
 );
 
-// ── Pago MP
+// ---- Pago Mercado Pago (REST only)
 app.use("/api/pay", payRoutes);
 
-// ── Envío de pedido por email (adjuntando fotos en memoria)
+// ---- Envío de pedidos por email (adjunta fotos en memoria)
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { fileSize: 5 * 1024 * 1024, files: 20 }, // 5MB c/u, máx 20
@@ -111,9 +122,9 @@ app.post("/api/orders", upload.array("photos"), async (req, res) => {
   }
 });
 
-// ── Arranque (Render usa app.listen)
+// ---- Start
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
   console.log(`🚀 Server on :${PORT}`);
-  console.log(`🌍 FRONTEND_URL: ${FRONTEND_URL || "no definido"}`);
+  console.log(`🌍 FRONTEND_URL permitido: ${FRONTEND_URL}`);
 });
