@@ -8,11 +8,15 @@ import payRoutes from "./routes/pay.js";
 dotenv.config();
 const app = express();
 
-// ✅ CORS (solo tu dominio y localhost)
+// ✅ CORS configurado correctamente
 app.use(
   cors({
-    origin: ["https://magnetico-app.vercel.app", "http://localhost:5173"],
+    origin: [
+      "https://magnetico-app.vercel.app", // tu dominio en producción
+      "http://localhost:5173"             // para pruebas locales
+    ],
     methods: ["GET", "POST"],
+    credentials: true,
   })
 );
 
