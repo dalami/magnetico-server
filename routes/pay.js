@@ -1,28 +1,43 @@
 import express from "express";
-import cors from "cors";
+import { MercadoPagoConfig, Preference } from "mercadopago";
 import dotenv from "dotenv";
-import payRoutes from "./routes/pay.js";
-
-
 dotenv.config();
 
-const app = express();
+const router = express.Router();
 
-// 🔥 CONFIGURACIÓN CORS CORRECTA
-app.use(
-  cors({
-    origin: ["https://magnetico-server-1.onrender.com"], // dominio frontend
-    methods: ["GET", "POST"],
-    allowedHeaders: ["Content-Type"],
-  })
-);
-
-app.use(express.json());
-app.use("/api/pay", payRoutes);
-
-app.get("/", (req, res) => {
-  res.send("Servidor Magnetico activo 🚀");
+const client = new MercadoPagoConfig({
+  accessToken: process.env.MP_ACCESS_TOKEN,
 });
 
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => console.log(`Servidor corriendo en puerto ${PORT}`));
+router.post("/", async (req, res) => {
+  try {
+    const { name, email, price } = req.body;
+
+    const preference = new Preference(client);
+    const body = {
+      items: [
+        {
+          title: `Pedido de ${name || "Cliente"}`,
+          description: "Fotoimanes personalizados",
+          quantity: 1,
+          unit_price: Number(price) || 2000,
+          currency_id: "ARS",
+        },
+      ],
+      payer: { email },
+      back_urls: {
+        success: `${process.env.FRONTEND_URL}/success`,
+        failure: `${process.env.FRONTEND_URL}/error`,
+      },
+      auto_return: "approved",
+    };
+
+    const result = await preference.create({ body });
+    res.json({ id: result.id });
+  } catch (error) {
+    console.error("❌ Error al crear preferencia:", error.message);
+    res.status(500).json({ error: "No se pudo crear la preferencia" });
+  }
+});
+
+export default router;
