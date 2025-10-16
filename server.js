@@ -43,6 +43,22 @@ app.use(cors({
 }));
 app.options("*", cors()); // preflight para todo
 
+app.use((req, res, next) => {
+  const origin = req.headers.origin || "*";
+  res.header("Access-Control-Allow-Origin", origin);
+  res.header("Vary", "Origin"); // para caches
+  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
+  // si NO usás cookies/sesiones, NO envíes Allow-Credentials
+  // res.header("Access-Control-Allow-Credentials", "true"); // (déjalo comentado)
+
+  if (req.method === "OPTIONS") {
+    // responder el preflight acá mismo
+    return res.status(204).end();
+  }
+  next();
+});
+
 // ---- Webhook MP (RAW) — declarar ANTES del JSON parser
 app.post("/api/webhook", express.raw({ type: "application/json" }), (req, res) => {
   try {
