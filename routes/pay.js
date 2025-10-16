@@ -1,109 +1,81 @@
 // routes/pay.js
 import express from "express";
 import axios from "axios";
+import crypto from "crypto";
+import { getUnitPrice } from "../services/pricing.js";
 
 const router = express.Router();
 
-const baseUrl = (process.env.FRONTEND_URL || "http://localhost:5173").replace(/\/+$/, "");
-const token = process.env.MP_ACCESS_TOKEN;
-
-const tokenInfo = (t) => (t ? `${t.slice(0,6)}...${t.slice(-4)} (len:${t.length})` : "MISSING");
-
 router.post("/", async (req, res) => {
   try {
-    const { name, email, price, items } = req.body;
+    const { name, email, quantity = 1 } = req.body;
+    if (!email) return res.status(400).json({ error: "Email requerido" });
 
-    if (!email) return res.status(400).json({ error: "Email es obligatorio." });
-    if (!token) return res.status(500).json({ error: "Falta MP_ACCESS_TOKEN en el servidor." });
+    const qty = Math.max(1, Math.min(Number(quantity) || 1, 20));
+    const unit = getUnitPrice();
 
-    const normalizedItems =
-      Array.isArray(items) && items.length
-        ? items.map(it => ({
-            id: it.id || "fotomagnetico",
-            title: it.title || `Pedido de ${name || "Cliente"}`,
-            quantity: Number(it.quantity || 1),
-            currency_id: it.currency_id || "ARS",
-            unit_price: Number(it.unit_price ?? price ?? 2000),
-          }))
-        : [{
-            id: "fotomagnetico",
-            title: `Pedido de ${name || "Cliente"}`,
-            quantity: 1,
-            currency_id: "ARS",
-            unit_price: Number(price ?? 2000),
-          }];
+    const uniqueId = crypto.randomBytes(6).toString("hex");
+    const title = `${qty} foto${qty > 1 ? "s" : ""} imantada${qty > 1 ? "s" : ""}`;
+
+    console.log("======================================");
+    console.log("🧮 Pedido recibido:");
+    console.log("👤 Nombre:", name);
+    console.log("📧 Email:", email);
+    console.log("🖼️ Cantidad:", qty);
+    console.log("💵 Precio unitario:", unit);
+    console.log("======================================");
 
     const payload = {
-      items: normalizedItems,
+      items: [
+        {
+          id: `pedido-${uniqueId}`,
+          title: `Pedido de ${title}`,
+          description: "Fotos personalizadas Magnetico",
+          quantity: qty, // 👈 se envía cantidad real
+          unit_price: unit, // 👈 se envía precio unitario
+          currency_id: "ARS",
+        },
+      ],
       payer: { email },
       back_urls: {
-        success: `${baseUrl}/success`,
-        failure: `${baseUrl}/error`,
-        pending: `${baseUrl}/pending`,
+        success: `${process.env.FRONTEND_URL}/success`,
+        failure: `${process.env.FRONTEND_URL}/error`,
+        pending: `${process.env.FRONTEND_URL}/pending`,
       },
       auto_return: "approved",
+      external_reference: uniqueId,
       statement_descriptor: "MAGNETICO",
+      metadata: { qty, unit, total: unit * qty },
     };
 
-    console.log("🟢 Crear preferencia (REST) →", {
-      email,
-      items: normalizedItems.map(i => ({ t: i.title, q: i.quantity, p: i.unit_price })),
-      FRONTEND_URL: baseUrl,
-      MP_TOKEN: tokenInfo(token),
-    });
+    console.log("🟢 Payload enviado a MP:", JSON.stringify(payload, null, 2));
 
     const { data } = await axios.post(
       "https://api.mercadopago.com/checkout/preferences",
       payload,
-      { headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" }, timeout: 20000 }
-    );
-
-    return res.status(201).json({ id: data.id, init_point: data.init_point, sandbox_init_point: data.sandbox_init_point });
-
-  } catch (error) {
-    console.error("❌ MP REST error:", {
-      status: error?.response?.status,
-      data: error?.response?.data,
-      msg: error?.message,
-    });
-
-    const detail =
-      error?.response?.data?.message ||
-      error?.response?.data?.error ||
-      error?.message ||
-      "No se pudo crear la preferencia.";
-    return res.status(500).json({ error: detail });
-  }
-});
-
-/** Diagnóstico: verificar token */
-router.get("/debug", async (_req, res) => {
-  try {
-    if (!token) return res.status(500).json({ ok:false, error: "Falta MP_ACCESS_TOKEN." });
-    const { data } = await axios.get("https://api.mercadopago.com/users/me", {
-      headers: { Authorization: `Bearer ${token}` },
-    });
-    res.json({ ok:true, nickname: data.nickname, site_id: data.site_id, token: tokenInfo(token) });
-  } catch (e) {
-    res.status(500).json({ ok:false, error: e?.response?.data || e.message });
-  }
-});
-
-/** Smoke test: crea una preferencia fija */
-router.post("/test", async (_req, res) => {
-  try {
-    const { data } = await axios.post(
-      "https://api.mercadopago.com/checkout/preferences",
       {
-        items: [{ title: "Prueba Magnetico", quantity: 1, currency_id: "ARS", unit_price: 2000 }],
-        back_urls: { success: `${baseUrl}/success`, failure: `${baseUrl}/error`, pending: `${baseUrl}/pending` },
-        auto_return: "approved",
-      },
-      { headers: { Authorization: `Bearer ${token}` } }
+        headers: {
+          Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
+          "Content-Type": "application/json",
+        },
+      }
     );
-    res.json({ id: data.id, init_point: data.init_point });
-  } catch (e) {
-    res.status(500).json({ error: e?.response?.data || e.message });
+
+    console.log("✅ Preferencia creada:", data.id);
+
+    const isSandbox = (process.env.MP_ACCESS_TOKEN || "").startsWith("TEST-");
+    const checkout_url = isSandbox ? data.sandbox_init_point : data.init_point;
+
+    res.status(201).json({
+      id: data.id,
+      qty,
+      unit,
+      total: unit * qty,
+      checkout_url,
+    });
+  } catch (error) {
+    console.error("❌ Error al crear preferencia:", error?.response?.data || error.message);
+    res.status(500).json({ error: error?.response?.data || error.message });
   }
 });
 

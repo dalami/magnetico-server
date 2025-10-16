@@ -1,4 +1,6 @@
+// -------------------------
 // server.js
+// -------------------------
 import dotenv from "dotenv";
 dotenv.config();
 
@@ -8,23 +10,37 @@ import helmet from "helmet";
 import compression from "compression";
 import multer from "multer";
 import nodemailer from "nodemailer";
-import payRoutes from "./routes/pay.js"; // <- tu ruta REST de MP
 
-// ---- App base
+// 🔹 Rutas
+import payRoutes from "./routes/pay.js";
+import configRoutes from "./routes/config.js";
+import adminRoutes from "./routes/admin.js";
+
+
+// -------------------------
+// Base App
+// -------------------------
 const app = express();
 app.set("trust proxy", 1);
 app.use(helmet());
 app.use(compression());
 
-// ---- CORS (Vercel + localhost)
-const FRONTEND_URL = (process.env.FRONTEND_URL || "https://magnetico-app.vercel.app").replace(/\/+$/,"");
+// -------------------------
+// Variables de entorno seguras
+// -------------------------
+const FRONTEND_URL = (process.env.FRONTEND_URL || "https://magnetico-app.vercel.app").replace(/\/+$/, "");
 
+// -------------------------
+// Log de origen para debugging
+// -------------------------
 app.use((req, _res, next) => {
-  // Log rápido para ver orígenes en logs de Render
-  console.log("Origin:", req.headers.origin || "(no origin)", " | Path:", req.path);
+  console.log("📩 Origin:", req.headers.origin || "(no origin)", "→", req.method, req.path);
   next();
 });
 
+// -------------------------
+// CORS (Vercel + localhost)
+// -------------------------
 app.use(cors({
   origin(origin, cb) {
     const allowList = new Set([
@@ -32,65 +48,75 @@ app.use(cors({
       FRONTEND_URL,
     ]);
     const ok =
-      !origin ||                      // curl / server-to-server
+      !origin ||
       allowList.has(origin) ||
-      /\.vercel\.app$/.test(origin);  // previews *.vercel.app
+      /\.vercel\.app$/.test(origin);
     cb(null, ok);
   },
-  methods: ["GET","POST","OPTIONS"],
-  allowedHeaders: ["Content-Type","Authorization"],
-  credentials: false, // no cookies -> false
+  methods: ["GET", "POST", "PUT", "OPTIONS"],
+  allowedHeaders: ["Content-Type", "Authorization", "x-admin-key"],
+  credentials: false, // no cookies
 }));
-app.options("*", cors()); // preflight para todo
 
+// Preflight universal
+app.options("*", cors());
+
+// -------------------------
+// Headers comunes
+// -------------------------
 app.use((req, res, next) => {
   const origin = req.headers.origin || "*";
   res.header("Access-Control-Allow-Origin", origin);
-  res.header("Vary", "Origin"); // para caches
-  res.header("Access-Control-Allow-Methods", "GET,POST,OPTIONS");
-  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization");
-  // si NO usás cookies/sesiones, NO envíes Allow-Credentials
-  // res.header("Access-Control-Allow-Credentials", "true"); // (déjalo comentado)
-
-  if (req.method === "OPTIONS") {
-    // responder el preflight acá mismo
-    return res.status(204).end();
-  }
+  res.header("Vary", "Origin");
+  res.header("Access-Control-Allow-Methods", "GET,POST,PUT,OPTIONS");
+  res.header("Access-Control-Allow-Headers", "Content-Type, Authorization, x-admin-key");
+  if (req.method === "OPTIONS") return res.sendStatus(204);
   next();
 });
 
-// ---- Webhook MP (RAW) — declarar ANTES del JSON parser
+// -------------------------
+// Webhook Mercado Pago
+// -------------------------
 app.post("/api/webhook", express.raw({ type: "application/json" }), (req, res) => {
   try {
-    console.log("🟢 Webhook MP:", req.body?.toString() || "(sin cuerpo)");
-    return res.status(200).send("OK");
-  } catch (e) {
-    console.error("❌ Webhook error:", e?.message || e);
-    return res.sendStatus(500);
+    console.log("🟢 Webhook MP recibido:", req.body?.toString() || "(sin cuerpo)");
+    res.status(200).send("OK");
+  } catch (err) {
+    console.error("❌ Webhook error:", err?.message || err);
+    res.sendStatus(500);
   }
 });
 
-// ---- Body parser JSON
+// -------------------------
+// Parsers
+// -------------------------
 app.use(express.json({ limit: "10mb" }));
 
-// ---- Health y raíz
-app.get("/", (_req, res) => res.send("Magnetico API running ✅"));
-app.get("/api/health", (_req, res) =>
-  res.json({ status: "ok", ts: new Date().toISOString() })
-);
-
-// ---- Pago Mercado Pago (REST only)
+// -------------------------
+// Rutas principales
+// -------------------------
+app.use("/api/config", configRoutes);
+app.use("/api/admin", adminRoutes);
 app.use("/api/pay", payRoutes);
 
-// ---- Envío de pedidos por email (adjunta fotos en memoria)
+// -------------------------
+// Healthcheck
+// -------------------------
+app.get("/", (_req, res) => res.send("Magnetico API ✅ Online"));
+app.get("/api/health", (_req, res) => res.json({ status: "ok", timestamp: new Date().toISOString() }));
+
+// -------------------------
+// Envío de pedidos por correo (con fotos adjuntas)
+// -------------------------
 const upload = multer({
   storage: multer.memoryStorage(),
-  limits: { fileSize: 5 * 1024 * 1024, files: 20 }, // 5MB c/u, máx 20
+  limits: { fileSize: 5 * 1024 * 1024, files: 20 },
 });
 
 app.post("/api/orders", upload.array("photos"), async (req, res) => {
   const { name, email, price } = req.body;
   const files = req.files;
+
   if (!email || !files?.length) {
     return res.status(400).json({ error: "Faltan datos o archivos." });
   }
@@ -100,7 +126,7 @@ app.post("/api/orders", upload.array("photos"), async (req, res) => {
       service: "gmail",
       auth: {
         user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS, // App Password de Google
+        pass: process.env.EMAIL_PASS,
       },
     });
 
@@ -131,16 +157,18 @@ app.post("/api/orders", upload.array("photos"), async (req, res) => {
       attachments,
     });
 
-    return res.json({ message: "Pedido enviado correctamente" });
+    res.json({ message: "Pedido enviado correctamente" });
   } catch (err) {
     console.error("❌ Error al enviar email:", err?.message || err);
-    return res.status(500).json({ error: "Error al procesar el pedido." });
+    res.status(500).json({ error: "Error al procesar el pedido." });
   }
 });
 
-// ---- Start
+// -------------------------
+// Start Server
+// -------------------------
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
-  console.log(`🚀 Server on :${PORT}`);
+  console.log(`🚀 Server corriendo en puerto ${PORT}`);
   console.log(`🌍 FRONTEND_URL permitido: ${FRONTEND_URL}`);
 });
