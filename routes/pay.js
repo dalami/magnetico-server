@@ -2,55 +2,69 @@
 import express from "express";
 import axios from "axios";
 import crypto from "crypto";
+import multer from "multer";
+import nodemailer from "nodemailer";
 import { getUnitPrice } from "../services/pricing.js";
 
 const router = express.Router();
 
-router.post("/", async (req, res) => {
+// Configuración de multer para recibir fotos en memoria
+const upload = multer({
+  storage: multer.memoryStorage(),
+  limits: { fileSize: 5 * 1024 * 1024, files: 20 },
+});
+
+router.post("/order", upload.array("photos"), async (req, res) => {
   try {
-    const { name, email, quantity = 1 } = req.body;
-    if (!email) return res.status(400).json({ error: "Email requerido" });
+    const { name, email } = req.body;
+    const photos = req.files || [];
+    const qty = photos.length;
 
-    const qty = Math.max(1, Math.min(Number(quantity) || 1, 20));
+    // Validaciones
+    if (!name?.trim() || !email?.trim() || qty === 0) {
+      return res.status(400).json({ error: "Faltan nombre, email o fotos." });
+    }
+
     const unit = getUnitPrice();
-
+    const total = unit * qty;
     const uniqueId = crypto.randomBytes(6).toString("hex");
-    const title = `${qty} foto${qty > 1 ? "s" : ""} imantada${qty > 1 ? "s" : ""}`;
+    const FRONTEND_URL = (process.env.FRONTEND_URL || "https://magnetico-app.vercel.app").replace(/\/+$/, "");
 
     console.log("======================================");
-    console.log("🧮 Pedido recibido:");
+    console.log("🧮 Nuevo pedido recibido:");
     console.log("👤 Nombre:", name);
     console.log("📧 Email:", email);
     console.log("🖼️ Cantidad:", qty);
     console.log("💵 Precio unitario:", unit);
+    console.log("💰 Total:", total);
     console.log("======================================");
 
+    // 🧾 Payload para Mercado Pago
     const payload = {
       items: [
         {
           id: `pedido-${uniqueId}`,
-          title: `Pedido de ${title}`,
-          description: "Fotos personalizadas Magnetico",
-          quantity: qty, // 👈 se envía cantidad real
-          unit_price: unit, // 👈 se envía precio unitario
+          title: `${qty} foto${qty > 1 ? "s" : ""} imantada${qty > 1 ? "s" : ""}`,
+          description: "Fotos personalizadas Magnético Fotoimanes",
+          quantity: qty,
+          unit_price: unit,
           currency_id: "ARS",
         },
       ],
       payer: { email },
       back_urls: {
-        success: `${process.env.FRONTEND_URL}/success`,
-        failure: `${process.env.FRONTEND_URL}/error`,
-        pending: `${process.env.FRONTEND_URL}/pending`,
+        success: `${FRONTEND_URL}/success?ref=${uniqueId}`,
+        failure: `${FRONTEND_URL}/error?ref=${uniqueId}`,
+        pending: `${FRONTEND_URL}/pending?ref=${uniqueId}`,
       },
       auto_return: "approved",
       external_reference: uniqueId,
       statement_descriptor: "MAGNETICO",
-      metadata: { qty, unit, total: unit * qty },
+      metadata: { name, email, qty, unit, total },
     };
 
-    console.log("🟢 Payload enviado a MP:", JSON.stringify(payload, null, 2));
-
-    const { data } = await axios.post(
+    // 🚀 Crear preferencia en Mercado Pago
+    const mpResponse = await axios.post(
       "https://api.mercadopago.com/checkout/preferences",
       payload,
       {
@@ -61,21 +75,62 @@ router.post("/", async (req, res) => {
       }
     );
 
-    console.log("✅ Preferencia creada:", data.id);
-
-    const isSandbox = (process.env.MP_ACCESS_TOKEN || "").startsWith("TEST-");
-    const checkout_url = isSandbox ? data.sandbox_init_point : data.init_point;
-
-    res.status(201).json({
-      id: data.id,
-      qty,
-      unit,
-      total: unit * qty,
-      checkout_url,
+    // ✅ Enviar correo con fotos al administrador
+    const transporter = nodemailer.createTransport({
+      service: "gmail",
+      auth: {
+        user: process.env.EMAIL_USER,
+        pass: process.env.EMAIL_PASS,
+      },
     });
+
+    const attachments = photos.map((file) => ({
+      filename: file.originalname,
+      content: file.buffer,
+      contentType: file.mimetype,
+    }));
+
+    // Correo al administrador (con fotos)
+    await transporter.sendMail({
+      from: `"Magnético" <${process.env.EMAIL_USER}>`,
+      to: process.env.DESTINATION_EMAIL,
+      subject: `🧾 Nuevo pedido - ${name}`,
+      html: `
+        <div style="font-family: Poppins, sans-serif;">
+          <h2>Nuevo pedido recibido</h2>
+          <p><b>Cliente:</b> ${name}</p>
+          <p><b>Email:</b> ${email}</p>
+          <p><b>Cantidad de fotos:</b> ${qty}</p>
+          <p><b>Total:</b> $${total.toLocaleString("es-AR")}</p>
+        </div>
+      `,
+      attachments,
+    });
+
+    // Correo de confirmación al cliente (sin fotos)
+    await transporter.sendMail({
+      from: `"Magnético Fotoimanes" <${process.env.EMAIL_USER}>`,
+      to: email,
+      subject: "📸 Confirmación de tu pedido - Magnético",
+      html: `
+        <div style="font-family: Poppins, sans-serif; text-align: center; background: #f9f6f1; padding: 20px; border-radius: 12px;">
+          <h2>¡Gracias por tu pedido, ${name}!</h2>
+          <p>Recibimos tus ${qty} foto${qty > 1 ? "s" : ""} correctamente 🧡</p>
+          <p><b>Monto:</b> $${total.toLocaleString("es-AR")}</p>
+          <p>En breve confirmaremos tu pago y comenzaremos la producción.</p>
+        </div>
+      `,
+    });
+
+    // Devolver URL de pago
+    const isSandbox = (process.env.MP_ACCESS_TOKEN || "").startsWith("TEST-");
+    const init_point = isSandbox ? mpResponse.data.sandbox_init_point : mpResponse.data.init_point;
+
+    res.status(201).json({ init_point });
+
   } catch (error) {
-    console.error("❌ Error al crear preferencia:", error?.response?.data || error.message);
-    res.status(500).json({ error: error?.response?.data || error.message });
+    console.error("❌ Error en /pay/order:", error.response?.data || error.message);
+    res.status(500).json({ error: "Error al procesar el pedido. Por favor, intentá nuevamente." });
   }
 });
 
