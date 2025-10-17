@@ -28,7 +28,9 @@ router.post("/order", upload.array("photos"), async (req, res) => {
     const unit = getUnitPrice();
     const total = unit * qty;
     const uniqueId = crypto.randomBytes(6).toString("hex");
-    const FRONTEND_URL = (process.env.FRONTEND_URL || "https://magnetico-app.vercel.app").replace(/\/+$/, "");
+    const FRONTEND_URL = (process.env.FRONTEND_URL || "https://magnetico-app.vercel.app")
+      .trim()
+      .replace(/\/+$/, "");
 
     console.log("======================================");
     console.log("🧮 Nuevo pedido recibido:");
@@ -63,19 +65,24 @@ router.post("/order", upload.array("photos"), async (req, res) => {
       metadata: { name, email, qty, unit, total },
     };
 
-    // 🚀 Crear preferencia en Mercado Pago
-    const mpResponse = await axios.post(
-      "https://api.mercadopago.com/checkout/preferences",
-      payload,
-      {
-        headers: {
-          Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
-          "Content-Type": "application/json",
-        },
-      }
-    );
+    console.log("🚀 Enviando solicitud a Mercado Pago...");
 
-    // ✅ Enviar correo con fotos al administrador
+    // 🚀 Crear preferencia en Mercado Pago — ¡URL SIN ESPACIOS!
+   const mpResponse = await axios.post(
+  "https://api.mercadopago.com/checkout/preferences",
+  payload,
+  {
+    headers: {
+      Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
+      "Content-Type": "application/json",
+    },
+    timeout: 10000, // 10 segundos
+  }
+);
+
+    console.log("✅ Orden de MP creada:", mpResponse.data.id);
+
+    // ✅ Configurar transporte de correo
     const transporter = nodemailer.createTransport({
       service: "gmail",
       auth: {
@@ -90,7 +97,7 @@ router.post("/order", upload.array("photos"), async (req, res) => {
       contentType: file.mimetype,
     }));
 
-    // Correo al administrador (con fotos)
+    console.log("📧 Enviando correo al administrador...");
     await transporter.sendMail({
       from: `"Magnético" <${process.env.EMAIL_USER}>`,
       to: process.env.DESTINATION_EMAIL,
@@ -107,7 +114,7 @@ router.post("/order", upload.array("photos"), async (req, res) => {
       attachments,
     });
 
-    // Correo de confirmación al cliente (sin fotos)
+    console.log("📨 Enviando confirmación al cliente...");
     await transporter.sendMail({
       from: `"Magnético Fotoimanes" <${process.env.EMAIL_USER}>`,
       to: email,
@@ -126,10 +133,11 @@ router.post("/order", upload.array("photos"), async (req, res) => {
     const isSandbox = (process.env.MP_ACCESS_TOKEN || "").startsWith("TEST-");
     const init_point = isSandbox ? mpResponse.data.sandbox_init_point : mpResponse.data.init_point;
 
+    console.log("🔗 Redirigiendo a:", init_point);
     res.status(201).json({ init_point });
 
   } catch (error) {
-    console.error("❌ Error en /pay/order:", error.response?.data || error.message);
+    console.error("❌ Error en /pay/order:", error.response?.data || error.message || error);
     res.status(500).json({ error: "Error al procesar el pedido. Por favor, intentá nuevamente." });
   }
 });
