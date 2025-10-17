@@ -13,6 +13,8 @@ import compression from "compression";
 import payRoutes from "./routes/pay.js";
 import configRoutes from "./routes/config.js";
 import adminRoutes from "./routes/admin.js";
+import orderRoutes from "./routes/order.js";
+
 
 // -------------------------
 // App base
@@ -21,6 +23,8 @@ const app = express();
 app.set("trust proxy", 1);
 app.use(helmet());
 app.use(compression());
+app.use("/api/send-photos", orderRoutes);   // ← para enviar fotos
+app.use("/api/create-payment", payRoutes);  // ← para crear pago
 
 // -------------------------
 // Variables y logs
