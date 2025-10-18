@@ -1,5 +1,5 @@
 // -------------------------
-// routes/order.js - VERSIÓN CON REDIRECCIÓN INMEDIATA A MERCADO PAGO
+// routes/order.js - VERSIÓN COMPLETA ACTUALIZADA
 // -------------------------
 import express from "express";
 import multer from "multer";
@@ -22,43 +22,125 @@ const upload = multer({
 });
 
 // ------------------------------
-// 📧 Servicio de Email al Vendedor (solo)
+// 📧 Servicio de Email al Vendedor
 // ------------------------------
 const sendVendorEmail = async ({ name, email, phone, address, photos, orderId }) => {
   try {
+    // 🔥 OPCIÓN A: SENDGRID (más confiable en Render)
+    const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
+    
+    if (SENDGRID_API_KEY) {
+      console.log('📧 Enviando email con SendGrid...');
+      
+      const emailData = {
+        personalizations: [
+          {
+            to: [{ email: process.env.DESTINATION_EMAIL }],
+            subject: `📦 NUEVO PEDIDO - ${orderId}`
+          }
+        ],
+        from: { email: 'notificaciones@magnetico.com', name: 'Magnético' },
+        content: [
+          {
+            type: 'text/html',
+            value: `
+              <h2>🎉 NUEVO PEDIDO RECIBIDO</h2>
+              <div style="background: #f8f9fa; padding: 20px; border-radius: 10px;">
+                <h3>📋 Datos del Cliente</h3>
+                <p><strong>Nombre:</strong> ${name}</p>
+                <p><strong>Email:</strong> ${email}</p>
+                ${phone ? `<p><strong>Teléfono:</strong> ${phone}</p>` : ''}
+                ${address ? `<p><strong>Dirección:</strong> ${address}</p>` : ''}
+                <p><strong>Fotos:</strong> ${photos.length}</p>
+                <p><strong>ID de Pedido:</strong> ${orderId}</p>
+                <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-AR')}</p>
+              </div>
+              <p><em>📎 ${photos.length} fotos adjuntas en el sistema</em></p>
+            `
+          }
+        ]
+      };
+
+      const response = await axios.post(
+        'https://api.sendgrid.com/v3/mail/send',
+        emailData,
+        {
+          headers: {
+            'Authorization': `Bearer ${SENDGRID_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 10000
+        }
+      );
+
+      console.log('✅ Email enviado con SendGrid');
+      return { success: true, provider: 'sendgrid' };
+    }
+
+    // 🔥 OPCIÓN B: RESEND (alternativa simple)
+    const RESEND_API_KEY = process.env.RESEND_API_KEY;
+    
+    if (RESEND_API_KEY) {
+      console.log('📧 Enviando email con Resend...');
+      
+      const emailData = {
+        from: 'Magnético <onboarding@resend.dev>',
+        to: process.env.DESTINATION_EMAIL,
+        subject: `📦 NUEVO PEDIDO - ${orderId}`,
+        html: `
+          <h2>🎉 NUEVO PEDIDO RECIBIDO</h2>
+          <div style="background: #f8f9fa; padding: 20px; border-radius: 10px;">
+            <h3>📋 Datos del Cliente</h3>
+            <p><strong>Nombre:</strong> ${name}</p>
+            <p><strong>Email:</strong> ${email}</p>
+            ${phone ? `<p><strong>Teléfono:</strong> ${phone}</p>` : ''}
+            ${address ? `<p><strong>Dirección:</strong> ${address}</p>` : ''}
+            <p><strong>Fotos:</strong> ${photos.length}</p>
+            <p><strong>ID de Pedido:</strong> ${orderId}</p>
+            <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-AR')}</p>
+          </div>
+        `
+      };
+
+      const response = await axios.post(
+        'https://api.resend.com/emails',
+        emailData,
+        {
+          headers: {
+            'Authorization': `Bearer ${RESEND_API_KEY}`,
+            'Content-Type': 'application/json'
+          },
+          timeout: 10000
+        }
+      );
+
+      console.log('✅ Email enviado con Resend');
+      return { success: true, provider: 'resend' };
+    }
+
+    // 🔥 OPCIÓN C: GMAIL con configuración optimizada
     const emailUser = process.env.EMAIL_USER;
     const emailPass = process.env.EMAIL_PASS;
     
-    if (!emailUser || !emailPass) {
-      console.log("❌ No hay configuración de email para vendedor");
-      return { simulated: true };
-    }
+    if (emailUser && emailPass) {
+      console.log('📧 Intentando con Gmail optimizado...');
+      
+      const transporter = nodemailer.createTransport({
+        host: "smtp.gmail.com",
+        port: 587, // 🔥 USAR PUERTO 587 en lugar de 465
+        secure: false, // 🔥 false para puerto 587
+        auth: {
+          user: emailUser,
+          pass: emailPass,
+        },
+        connectionTimeout: 10000,
+        greetingTimeout: 10000,
+        socketTimeout: 10000
+      });
 
-    const transporter = nodemailer.createTransport({
-      host: "smtp.gmail.com",
-      port: 465,
-      secure: true,
-      auth: {
-        user: emailUser,
-        pass: emailPass,
-      },
-      connectionTimeout: 10000,
-      greetingTimeout: 10000,
-      socketTimeout: 10000
-    });
-
-    console.log(`📧 Enviando email al vendedor para pedido ${orderId}...`);
-
-    const vendorAttachments = photos.map((file, index) => ({
-      filename: `pedido_${orderId}_foto_${index + 1}.jpg`,
-      content: file.buffer,
-      contentType: 'image/jpeg'
-    }));
-
-    const vendorHtml = `
-      <div style="font-family: Arial, sans-serif; padding: 20px; background: #f8f9fa;">
-        <h2 style="color: #4CAF50;">🎉 NUEVO PEDIDO RECIBIDO</h2>
-        <div style="background: white; padding: 20px; border-radius: 10px; border-left: 4px solid #4CAF50;">
+      const vendorHtml = `
+        <h2>🎉 NUEVO PEDIDO RECIBIDO</h2>
+        <div style="background: #f8f9fa; padding: 20px; border-radius: 10px;">
           <h3>📋 Datos del Cliente</h3>
           <p><strong>Nombre:</strong> ${name}</p>
           <p><strong>Email:</strong> ${email}</p>
@@ -68,27 +150,28 @@ const sendVendorEmail = async ({ name, email, phone, address, photos, orderId })
           <p><strong>ID de Pedido:</strong> ${orderId}</p>
           <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-AR')}</p>
         </div>
-        <p style="margin-top: 20px; color: #666;">
-          <em>📎 ${photos.length} fotos adjuntas a este correo.</em>
-        </p>
-      </div>
-    `;
+        <p><em>📎 ${photos.length} fotos procesadas correctamente</em></p>
+      `;
 
-    const vendorResult = await transporter.sendMail({
-      from: `"Magnético" <${emailUser}>`,
-      to: process.env.DESTINATION_EMAIL || emailUser,
-      replyTo: email,
-      subject: `📦 PEDIDO COMPLETO - ${orderId}`,
-      html: vendorHtml,
-      attachments: vendorAttachments,
-    });
+      const vendorResult = await transporter.sendMail({
+        from: `"Magnético" <${emailUser}>`,
+        to: process.env.DESTINATION_EMAIL || emailUser,
+        replyTo: email,
+        subject: `📦 PEDIDO - ${orderId}`,
+        html: vendorHtml,
+        // 🔥 NO adjuntar archivos para evitar timeout
+      });
 
-    console.log(`✅ Email enviado al vendedor: ${vendorResult.messageId}`);
-    return { success: true, messageId: vendorResult.messageId };
+      console.log('✅ Email enviado con Gmail');
+      return { success: true, provider: 'gmail' };
+    }
+
+    console.log('ℹ️ No hay configuración de email disponible');
+    return { simulated: true };
 
   } catch (error) {
-    console.error("❌ Error enviando email al vendedor:", error.message);
-    return { error: error.message };
+    console.error('❌ Error enviando email:', error.message);
+    return { error: error.message, simulated: true };
   }
 };
 
@@ -158,11 +241,15 @@ async function processEmailBackground({ name, email, phone, address, photos, ord
     console.log(`🔄 Procesando email en segundo plano para ${orderId}...`);
     
     // Solo enviar email al vendedor (NO al cliente)
-    await sendVendorEmail({
+    const emailResult = await sendVendorEmail({
       name, email, phone, address, photos, orderId
     });
 
-    console.log(`✅ Email de vendedor procesado para ${orderId}`);
+    if (emailResult.error) {
+      console.log(`⚠️ Email falló pero el pedido continúa: ${emailResult.error}`);
+    } else {
+      console.log(`✅ Email de vendedor procesado para ${orderId}`);
+    }
 
   } catch (error) {
     console.error(`❌ Error en procesamiento de email ${orderId}:`, error);
@@ -184,6 +271,7 @@ router.post("/", upload.array("photos"), async (req, res) => {
     console.log(`\n🟢 INICIANDO PEDIDO ${orderId}`);
     console.log(`📋 Datos: ${name}, ${email}`);
     console.log(`📸 Fotos: ${photoCount}`);
+    console.log(`🌐 Origen: ${req.get('origin')}`);
 
     // Validaciones rápidas
     if (!name?.trim() || !email?.trim()) {
@@ -213,6 +301,10 @@ router.post("/", upload.array("photos"), async (req, res) => {
       unitPrice,
       orderId
     );
+
+    if (!preference.init_point) {
+      throw new Error("No se recibió link de pago de Mercado Pago");
+    }
 
     // 🔥 ENVIAR RESPUESTA CON LINK DE MERCADO PAGO
     console.log(`⚡ Enviando respuesta con link de Mercado Pago para ${orderId}`);
@@ -263,13 +355,40 @@ router.post("/", upload.array("photos"), async (req, res) => {
   }
 });
 
-// HEALTH CHECK
+// ------------------------------
+// 📊 ENDPOINT PARA OBTENER PRECIO
+// ------------------------------
+router.get("/config/price", async (req, res) => {
+  try {
+    const unitPrice = getUnitPrice();
+    
+    res.json({
+      success: true,
+      price: unitPrice,
+      unit_price: unitPrice,
+      currency: "ARS",
+      timestamp: new Date().toISOString()
+    });
+  } catch (error) {
+    console.error("❌ Error obteniendo precio:", error);
+    res.status(500).json({
+      success: false,
+      error: "Error al obtener el precio"
+    });
+  }
+});
+
+// ------------------------------
+// 🩺 HEALTH CHECK
+// ------------------------------
 router.get("/health", (req, res) => {
   res.json({ 
     status: 'ok', 
     service: 'order-api',
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
+    environment: process.env.NODE_ENV || 'development',
+    memory: process.memoryUsage(),
+    uptime: process.uptime()
   });
 });
 
