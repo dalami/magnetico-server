@@ -1,38 +1,37 @@
 // -------------------------
-// routes/order.js - VERSIÓN DEFINITIVA CORREGIDA
+// routes/order.js - VERSIÓN CON REDIRECCIÓN INMEDIATA A MERCADO PAGO
 // -------------------------
 import express from "express";
 import multer from "multer";
 import nodemailer from "nodemailer";
 import axios from "axios";
-import crypto from "crypto";
 import { getUnitPrice } from "../services/pricing.js";
 
 const router = express.Router();
 
 // ------------------------------
-// 🔥 Multer
+// 🔥 Multer Configuración Optimizada
 // ------------------------------
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { 
-    fileSize: 20 * 1024 * 1024,
-    files: 30,
+    fileSize: 10 * 1024 * 1024,
+    files: 20,
+    fieldSize: 10 * 1024 * 1024
   }
 });
 
 // ------------------------------
-// 📧 Email Service - FORZADO A FUNCIONAR
+// 📧 Servicio de Email al Vendedor (solo)
 // ------------------------------
-const sendEmails = async (name, email, photos, orderId) => {
+const sendVendorEmail = async ({ name, email, phone, address, photos, orderId }) => {
   try {
-    // 🔥 FORZAR CONFIGURACIÓN DIRECTA
-    const emailUser = process.env.EMAIL_USER || "diegoalami@gmail.com";
-    const emailPass = process.env.EMAIL_PASS || "cqzldwusjnajheqh";
+    const emailUser = process.env.EMAIL_USER;
+    const emailPass = process.env.EMAIL_PASS;
     
     if (!emailUser || !emailPass) {
-      console.log("❌ No hay configuración de email");
-      return { vendor: { simulated: true }, client: { simulated: true } };
+      console.log("❌ No hay configuración de email para vendedor");
+      return { simulated: true };
     }
 
     const transporter = nodemailer.createTransport({
@@ -43,80 +42,68 @@ const sendEmails = async (name, email, photos, orderId) => {
         user: emailUser,
         pass: emailPass,
       },
+      connectionTimeout: 10000,
+      greetingTimeout: 10000,
+      socketTimeout: 10000
     });
 
-    console.log("📧 Intentando enviar emails REALES...");
+    console.log(`📧 Enviando email al vendedor para pedido ${orderId}...`);
 
-    // Email al VENDEDOR con fotos adjuntas
     const vendorAttachments = photos.map((file, index) => ({
-      filename: `foto_${index + 1}.jpg`,
+      filename: `pedido_${orderId}_foto_${index + 1}.jpg`,
       content: file.buffer,
       contentType: 'image/jpeg'
     }));
 
+    const vendorHtml = `
+      <div style="font-family: Arial, sans-serif; padding: 20px; background: #f8f9fa;">
+        <h2 style="color: #4CAF50;">🎉 NUEVO PEDIDO RECIBIDO</h2>
+        <div style="background: white; padding: 20px; border-radius: 10px; border-left: 4px solid #4CAF50;">
+          <h3>📋 Datos del Cliente</h3>
+          <p><strong>Nombre:</strong> ${name}</p>
+          <p><strong>Email:</strong> ${email}</p>
+          ${phone ? `<p><strong>Teléfono:</strong> ${phone}</p>` : ''}
+          ${address ? `<p><strong>Dirección:</strong> ${address}</p>` : ''}
+          <p><strong>Fotos:</strong> ${photos.length}</p>
+          <p><strong>ID de Pedido:</strong> ${orderId}</p>
+          <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-AR')}</p>
+        </div>
+        <p style="margin-top: 20px; color: #666;">
+          <em>📎 ${photos.length} fotos adjuntas a este correo.</em>
+        </p>
+      </div>
+    `;
+
     const vendorResult = await transporter.sendMail({
       from: `"Magnético" <${emailUser}>`,
       to: process.env.DESTINATION_EMAIL || emailUser,
-      subject: `📸 NUEVO PEDIDO - ${orderId}`,
-      html: `
-        <h2>🎉 Nuevo Pedido Recibido</h2>
-        <p><strong>Cliente:</strong> ${name}</p>
-        <p><strong>Email:</strong> ${email}</p>
-        <p><strong>Fotos:</strong> ${photos.length}</p>
-        <p><strong>ID:</strong> ${orderId}</p>
-        <p><em>Las fotos están adjuntas a este correo.</em></p>
-      `,
-      attachments: vendorAttachments
+      replyTo: email,
+      subject: `📦 PEDIDO COMPLETO - ${orderId}`,
+      html: vendorHtml,
+      attachments: vendorAttachments,
     });
 
-    console.log("✅ Email REAL enviado al vendedor:", vendorResult.messageId);
-
-    // Email al CLIENTE
-    const clientResult = await transporter.sendMail({
-      from: `"Magnético" <${emailUser}>`,
-      to: email,
-      subject: "✅ Confirmación de Pedido - Magnético",
-      html: `
-        <div style="font-family: Arial, sans-serif; padding: 20px;">
-          <h2 style="color: #4CAF50;">¡Gracias por tu pedido, ${name}!</h2>
-          <p>Hemos recibido tus <strong>${photos.length} fotos</strong> correctamente.</p>
-          <p><strong>ID de Pedido:</strong> ${orderId}</p>
-          <p>Te contactaremos a la brevedad para coordinar el envío.</p>
-          <br>
-          <p><em>Equipo Magnético</em></p>
-        </div>
-      `
-    });
-
-    console.log("✅ Email REAL enviado al cliente:", clientResult.messageId);
-
-    return {
-      vendor: { success: true, messageId: vendorResult.messageId },
-      client: { success: true, messageId: clientResult.messageId }
-    };
+    console.log(`✅ Email enviado al vendedor: ${vendorResult.messageId}`);
+    return { success: true, messageId: vendorResult.messageId };
 
   } catch (error) {
-    console.error("❌ Error enviando emails:", error.message);
-    return {
-      vendor: { error: error.message },
-      client: { error: error.message }
-    };
+    console.error("❌ Error enviando email al vendedor:", error.message);
+    return { error: error.message };
   }
 };
 
 // ------------------------------
-// 💳 Mercado Pago Service - FORZADO A FUNCIONAR
+// 💳 Mercado Pago Service
 // ------------------------------
 const createMercadoPagoPreference = async (name, email, photoCount, unitPrice, orderId) => {
   try {
-    // 🔥 FORZAR TOKEN DIRECTAMENTE
-    const mpToken = process.env.MP_ACCESS_TOKEN || "APP_USR-7889157239392520-101413-f2f008a3a3d103930d4a335d47bf7a95-38101301";
+    const mpToken = process.env.MP_ACCESS_TOKEN;
     
     if (!mpToken) {
       throw new Error("No hay token de Mercado Pago");
     }
 
-    console.log("💳 Creando checkout REAL de Mercado Pago...");
+    console.log(`💳 Creando checkout de Mercado Pago para ${orderId}...`);
 
     const payload = {
       items: [
@@ -139,7 +126,7 @@ const createMercadoPagoPreference = async (name, email, photoCount, unitPrice, o
       },
       auto_return: "approved",
       external_reference: orderId,
-      notification_url: "https://magnetico-server-1.onrender.com/api/webhook"
+      notification_url: process.env.WEBHOOK_URL || "https://magnetico-server-1.onrender.com/api/webhook"
     };
 
     const response = await axios.post(
@@ -154,7 +141,7 @@ const createMercadoPagoPreference = async (name, email, photoCount, unitPrice, o
       }
     );
 
-    console.log("✅ Checkout MP REAL creado:", response.data.id);
+    console.log(`✅ Checkout MP creado: ${response.data.id}`);
     return response.data;
 
   } catch (error) {
@@ -164,86 +151,126 @@ const createMercadoPagoPreference = async (name, email, photoCount, unitPrice, o
 };
 
 // ------------------------------
-// 🚀 ENDPOINT PRINCIPAL - DEFINITIVO
+// 🔄 PROCESAMIENTO EN SEGUNDO PLANO SOLO PARA EMAIL
+// ------------------------------
+async function processEmailBackground({ name, email, phone, address, photos, orderId }) {
+  try {
+    console.log(`🔄 Procesando email en segundo plano para ${orderId}...`);
+    
+    // Solo enviar email al vendedor (NO al cliente)
+    await sendVendorEmail({
+      name, email, phone, address, photos, orderId
+    });
+
+    console.log(`✅ Email de vendedor procesado para ${orderId}`);
+
+  } catch (error) {
+    console.error(`❌ Error en procesamiento de email ${orderId}:`, error);
+  }
+}
+
+// ------------------------------
+// 🚀 ENDPOINT PRINCIPAL - REDIRECCIÓN INMEDIATA A MERCADO PAGO
 // ------------------------------
 router.post("/", upload.array("photos"), async (req, res) => {
   const orderId = `ORD-${Date.now().toString(36).toUpperCase()}`;
+  const startTime = Date.now();
   
   try {
-    const { name, email } = req.body;
+    const { name, email, phone, address } = req.body;
     const photos = req.files || [];
     const photoCount = photos.length;
 
-    console.log("🟢 INICIANDO PEDIDO REAL:", { name, email, photoCount });
+    console.log(`\n🟢 INICIANDO PEDIDO ${orderId}`);
+    console.log(`📋 Datos: ${name}, ${email}`);
+    console.log(`📸 Fotos: ${photoCount}`);
 
-    // Validaciones
+    // Validaciones rápidas
     if (!name?.trim() || !email?.trim()) {
       return res.status(400).json({ 
         success: false,
-        error: "Por favor completá tu nombre y email." 
+        error: "Nombre y email son obligatorios" 
       });
     }
 
     if (photoCount < 4) {
       return res.status(400).json({ 
         success: false,
-        error: "Subí al menos 4 fotos para realizar el pedido." 
+        error: "Se requieren al menos 4 fotos" 
       });
     }
 
-    // 📧 ENVIAR EMAILS (no esperar, hacerlo en background)
-    sendEmails(name, email, photos, orderId)
-      .then(result => {
-        console.log("📧 Resultado final emails:", result);
-      })
-      .catch(error => {
-        console.error("📧 Error en background emails:", error);
-      });
-
-    // 💳 CREAR PAGO REAL CON MERCADO PAGO
+    // 🔥 CREAR PREFERENCIA DE MERCADO PAGO INMEDIATAMENTE
+    console.log(`💳 Creando preferencia de Mercado Pago para ${orderId}...`);
+    
     const unitPrice = getUnitPrice();
     const total = unitPrice * photoCount;
 
-    console.log("💰 Procesando pago:", { unitPrice, photoCount, total });
-
     const preference = await createMercadoPagoPreference(
-      name, 
-      email, 
-      photoCount, 
-      unitPrice, 
+      name.trim(),
+      email.trim(), 
+      photoCount,
+      unitPrice,
       orderId
     );
 
-    // 🎯 RESPUESTA INMEDIATA CON REDIRECCIÓN
+    // 🔥 ENVIAR RESPUESTA CON LINK DE MERCADO PAGO
+    console.log(`⚡ Enviando respuesta con link de Mercado Pago para ${orderId}`);
+    
     res.status(200).json({
       success: true,
-      message: "✅ Pedido procesado. Redirigiendo a Mercado Pago...",
+      message: "✅ Pedido procesado correctamente. Redirigiendo a Mercado Pago...",
       orderId: orderId,
       payment: {
-        init_point: preference.init_point, // ✅ URL REAL de MP
+        init_point: preference.init_point,
         preference_id: preference.id,
         total: total,
-        is_real: true // ✅ CONFIRMACIÓN DE QUE ES REAL
       },
-      redirect: true, // ✅ INDICAR QUE DEBE REDIRIGIR
-      summary: {
-        photosReceived: photoCount,
-        total: total
-      }
+      photosProcessed: photoCount,
+      timestamp: new Date().toISOString()
     });
 
-    console.log(`🎉 PEDIDO ${orderId} ENVIADO A MERCADO PAGO`);
+    const responseTime = Date.now() - startTime;
+    console.log(`✅ Respuesta enviada en ${responseTime}ms para ${orderId}`);
+
+    // 🔥 PROCESAR EMAIL EN SEGUNDO PLANO (no bloqueante)
+    setTimeout(async () => {
+      try {
+        await processEmailBackground({
+          name: name.trim(),
+          email: email.trim(),
+          phone: phone?.trim() || '',
+          address: address?.trim() || '',
+          photos,
+          orderId
+        });
+      } catch (bgError) {
+        console.error(`❌ Error en procesamiento de email ${orderId}:`, bgError);
+      }
+    }, 100);
 
   } catch (error) {
-    console.error("❌ ERROR CRÍTICO:", error.message);
+    console.error(`❌ ERROR en endpoint principal ${orderId}:`, error.message);
+    
+    const errorTime = Date.now() - startTime;
+    console.log(`💥 Error ocurrido en ${errorTime}ms`);
     
     res.status(500).json({
       success: false,
-      error: "Error al procesar el pago: " + error.message,
+      error: "Error al procesar el pedido: " + error.message,
       orderId: orderId
     });
   }
 });
 
-// 🔥 EXPORT DEFAULT CORREGIDO - ESTO ES LO QUE FALTABA
+// HEALTH CHECK
+router.get("/health", (req, res) => {
+  res.json({ 
+    status: 'ok', 
+    service: 'order-api',
+    timestamp: new Date().toISOString(),
+    environment: process.env.NODE_ENV || 'development'
+  });
+});
+
 export default router;
