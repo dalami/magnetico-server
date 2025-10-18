@@ -1,5 +1,5 @@
 // -------------------------
-// routes/order.js - VERSIÓN COMPLETA ACTUALIZADA
+// routes/order.js - VERSIÓN CON FOTOS ADJUNTAS
 // -------------------------
 import express from "express";
 import multer from "multer";
@@ -15,28 +15,140 @@ const router = express.Router();
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: { 
-    fileSize: 10 * 1024 * 1024,
+    fileSize: 5 * 1024 * 1024, // Reducido a 5MB por foto
     files: 20,
     fieldSize: 10 * 1024 * 1024
   }
 });
 
 // ------------------------------
-// 📧 Servicio de Email al Vendedor
+// 📧 Servicio de Email al Vendedor CON FOTOS ADJUNTAS
 // ------------------------------
-const sendVendorEmail = async ({ name, email, phone, address, photos, orderId }) => {
+const sendVendorEmailWithAttachments = async ({ name, email, phone, address, photos, orderId }) => {
   try {
-    // 🔥 OPCIÓN A: SENDGRID (más confiable en Render)
+    const emailUser = process.env.EMAIL_USER;
+    const emailPass = process.env.EMAIL_PASS;
+    
+    if (!emailUser || !emailPass) {
+      console.log('❌ No hay configuración de email para adjuntar fotos');
+      return { error: 'No hay configuración de email', simulated: true };
+    }
+
+    console.log('📧 Preparando email con fotos adjuntas...');
+
+    // 🔥 CONFIGURACIÓN OPTIMIZADA PARA RENDER
+    const transporter = nodemailer.createTransport({
+      host: "smtp.gmail.com",
+      port: 587, // Puerto alternativo que funciona mejor en Render
+      secure: false,
+      auth: {
+        user: emailUser,
+        pass: emailPass,
+      },
+      connectionTimeout: 30000, // Aumentado a 30 segundos
+      greetingTimeout: 30000,
+      socketTimeout: 30000,
+      // Configuración adicional para Render
+      tls: {
+        rejectUnauthorized: false
+      }
+    });
+
+    // 🔥 PREPARAR ADJUNTOS (máximo 10 fotos para evitar timeout)
+    const attachments = photos.slice(0, 10).map((file, index) => {
+      // Optimizar el nombre del archivo
+      const safeName = file.originalname.replace(/[^a-zA-Z0-9.]/g, '_');
+      return {
+        filename: `Foto_${index + 1}_${orderId}_${safeName}`,
+        content: file.buffer,
+        contentType: file.mimetype,
+        encoding: 'base64'
+      };
+    });
+
+    console.log(`📎 Preparados ${attachments.length} adjuntos de ${photos.length} fotos totales`);
+
+    const vendorHtml = `
+      <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+        <h2 style="color: #4CAF50; text-align: center;">🎉 NUEVO PEDIDO - ${photos.length} FOTOS</h2>
+        
+        <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 15px 0;">
+          <h3 style="color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">📋 Datos del Cliente</h3>
+          <p><strong>Nombre:</strong> ${name}</p>
+          <p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
+          ${phone ? `<p><strong>Teléfono:</strong> <a href="tel:${phone}">${phone}</a></p>` : ''}
+          ${address ? `<p><strong>Dirección:</strong> ${address}</p>` : ''}
+          <p><strong>Total de Fotos:</strong> ${photos.length}</p>
+          <p><strong>Adjuntadas:</strong> ${attachments.length} (máximo 10 para evitar timeout)</p>
+          <p><strong>ID de Pedido:</strong> ${orderId}</p>
+          <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-AR')}</p>
+        </div>
+
+        <div style="background: #e8f5e8; padding: 15px; border-radius: 8px; border: 1px solid #c3e6cb; margin: 15px 0;">
+          <p style="margin: 0; color: #155724;">
+            <strong>📞 Contactá al cliente:</strong> 
+            <a href="mailto:${email}" style="color: #155724; text-decoration: underline;">${email}</a>
+            ${phone ? ` o <a href="tel:${phone}" style="color: #155724; text-decoration: underline;">${phone}</a>` : ''}
+          </p>
+        </div>
+
+        <div style="text-align: center; margin-top: 30px; padding-top: 20px; border-top: 1px solid #ddd;">
+          <p style="color: #666; font-size: 14px;">
+            <em>Las ${attachments.length} fotos están adjuntas a este email</em>
+          </p>
+        </div>
+      </div>
+    `;
+
+    console.log('🔄 Enviando email con adjuntos...');
+    
+    const vendorResult = await transporter.sendMail({
+      from: `"Magnético" <${emailUser}>`,
+      to: process.env.DESTINATION_EMAIL || emailUser,
+      replyTo: email,
+      subject: `📦 PEDIDO CON ${photos.length} FOTOS - ${orderId}`,
+      html: vendorHtml,
+      attachments: attachments,
+      // Prioridad alta
+      priority: 'high'
+    });
+
+    console.log(`✅ Email con ${attachments.length} fotos adjuntas enviado exitosamente`);
+    return { 
+      success: true, 
+      provider: 'gmail', 
+      photosAttached: attachments.length,
+      totalPhotos: photos.length,
+      messageId: vendorResult.messageId 
+    };
+
+  } catch (error) {
+    console.error('❌ Error enviando email con adjuntos:', error.message);
+    
+    // 🔥 FALLBACK: Enviar email sin adjuntos pero con la información
+    try {
+      console.log('🔄 Intentando fallback: email sin adjuntos...');
+      return await sendVendorEmailFallback({ name, email, phone, address, photos, orderId });
+    } catch (fallbackError) {
+      console.error('❌ Fallback también falló:', fallbackError.message);
+      return { error: error.message, simulated: true };
+    }
+  }
+};
+
+// 🔥 FALLBACK: Email sin adjuntos pero con información
+const sendVendorEmailFallback = async ({ name, email, phone, address, photos, orderId }) => {
+  try {
     const SENDGRID_API_KEY = process.env.SENDGRID_API_KEY;
     
     if (SENDGRID_API_KEY) {
-      console.log('📧 Enviando email con SendGrid...');
+      console.log('📧 Enviando email informativo (fallback)...');
       
       const emailData = {
         personalizations: [
           {
             to: [{ email: process.env.DESTINATION_EMAIL }],
-            subject: `📦 NUEVO PEDIDO - ${orderId}`
+            subject: `📦 PEDIDO: ${photos.length} FOTOS - ${orderId}`
           }
         ],
         from: { email: 'notificaciones@magnetico.com', name: 'Magnético' },
@@ -44,24 +156,49 @@ const sendVendorEmail = async ({ name, email, phone, address, photos, orderId })
           {
             type: 'text/html',
             value: `
-              <h2>🎉 NUEVO PEDIDO RECIBIDO</h2>
-              <div style="background: #f8f9fa; padding: 20px; border-radius: 10px;">
-                <h3>📋 Datos del Cliente</h3>
-                <p><strong>Nombre:</strong> ${name}</p>
-                <p><strong>Email:</strong> ${email}</p>
-                ${phone ? `<p><strong>Teléfono:</strong> ${phone}</p>` : ''}
-                ${address ? `<p><strong>Dirección:</strong> ${address}</p>` : ''}
-                <p><strong>Fotos:</strong> ${photos.length}</p>
-                <p><strong>ID de Pedido:</strong> ${orderId}</p>
-                <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-AR')}</p>
+              <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
+                <h2 style="color: #4CAF50; text-align: center;">🎉 NUEVO PEDIDO - ${photos.length} FOTOS</h2>
+                
+                <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 15px 0;">
+                  <h3 style="color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">📋 Datos del Cliente</h3>
+                  <p><strong>Nombre:</strong> ${name}</p>
+                  <p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
+                  ${phone ? `<p><strong>Teléfono:</strong> <a href="tel:${phone}">${phone}</a></p>` : ''}
+                  ${address ? `<p><strong>Dirección:</strong> ${address}</p>` : ''}
+                  <p><strong>Total de Fotos:</strong> ${photos.length}</p>
+                  <p><strong>ID de Pedido:</strong> ${orderId}</p>
+                  <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-AR')}</p>
+                </div>
+
+                <div style="background: #fff3cd; padding: 15px; border-radius: 8px; border: 1px solid #ffeaa7; margin: 15px 0;">
+                  <h4 style="color: #856404; margin-top: 0;">📸 Fotos del Pedido</h4>
+                  <p><strong>Total de fotos:</strong> ${photos.length}</p>
+                  <p><strong>Tamaños aproximados:</strong></p>
+                  <ul>
+                    ${photos.map((photo, index) => `
+                      <li>Foto ${index + 1}: ${(photo.size / 1024 / 1024).toFixed(2)} MB - ${photo.originalname}</li>
+                    `).join('')}
+                  </ul>
+                  <p style="color: #856404; font-style: italic; margin-bottom: 0;">
+                    ⚠️ Las fotos no pudieron adjuntarse por limitaciones técnicas. 
+                    Contactá al cliente para que te las envíe directamente.
+                  </p>
+                </div>
+
+                <div style="margin-top: 20px; padding: 15px; background: #e8f5e8; border-radius: 8px; border: 1px solid #c3e6cb;">
+                  <p style="margin: 0; color: #155724;">
+                    <strong>📞 Contactá al cliente:</strong> 
+                    <a href="mailto:${email}" style="color: #155724; text-decoration: underline;">${email}</a>
+                    ${phone ? ` o <a href="tel:${phone}" style="color: #155724; text-decoration: underline;">${phone}</a>` : ''}
+                  </p>
+                </div>
               </div>
-              <p><em>📎 ${photos.length} fotos adjuntas en el sistema</em></p>
             `
           }
         ]
       };
 
-      const response = await axios.post(
+      await axios.post(
         'https://api.sendgrid.com/v3/mail/send',
         emailData,
         {
@@ -73,104 +210,15 @@ const sendVendorEmail = async ({ name, email, phone, address, photos, orderId })
         }
       );
 
-      console.log('✅ Email enviado con SendGrid');
-      return { success: true, provider: 'sendgrid' };
+      console.log('✅ Email informativo enviado (fallback)');
+      return { success: true, provider: 'sendgrid-fallback', photosAttached: 0 };
     }
 
-    // 🔥 OPCIÓN B: RESEND (alternativa simple)
-    const RESEND_API_KEY = process.env.RESEND_API_KEY;
-    
-    if (RESEND_API_KEY) {
-      console.log('📧 Enviando email con Resend...');
-      
-      const emailData = {
-        from: 'Magnético <onboarding@resend.dev>',
-        to: process.env.DESTINATION_EMAIL,
-        subject: `📦 NUEVO PEDIDO - ${orderId}`,
-        html: `
-          <h2>🎉 NUEVO PEDIDO RECIBIDO</h2>
-          <div style="background: #f8f9fa; padding: 20px; border-radius: 10px;">
-            <h3>📋 Datos del Cliente</h3>
-            <p><strong>Nombre:</strong> ${name}</p>
-            <p><strong>Email:</strong> ${email}</p>
-            ${phone ? `<p><strong>Teléfono:</strong> ${phone}</p>` : ''}
-            ${address ? `<p><strong>Dirección:</strong> ${address}</p>` : ''}
-            <p><strong>Fotos:</strong> ${photos.length}</p>
-            <p><strong>ID de Pedido:</strong> ${orderId}</p>
-            <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-AR')}</p>
-          </div>
-        `
-      };
-
-      const response = await axios.post(
-        'https://api.resend.com/emails',
-        emailData,
-        {
-          headers: {
-            'Authorization': `Bearer ${RESEND_API_KEY}`,
-            'Content-Type': 'application/json'
-          },
-          timeout: 10000
-        }
-      );
-
-      console.log('✅ Email enviado con Resend');
-      return { success: true, provider: 'resend' };
-    }
-
-    // 🔥 OPCIÓN C: GMAIL con configuración optimizada
-    const emailUser = process.env.EMAIL_USER;
-    const emailPass = process.env.EMAIL_PASS;
-    
-    if (emailUser && emailPass) {
-      console.log('📧 Intentando con Gmail optimizado...');
-      
-      const transporter = nodemailer.createTransport({
-        host: "smtp.gmail.com",
-        port: 587, // 🔥 USAR PUERTO 587 en lugar de 465
-        secure: false, // 🔥 false para puerto 587
-        auth: {
-          user: emailUser,
-          pass: emailPass,
-        },
-        connectionTimeout: 10000,
-        greetingTimeout: 10000,
-        socketTimeout: 10000
-      });
-
-      const vendorHtml = `
-        <h2>🎉 NUEVO PEDIDO RECIBIDO</h2>
-        <div style="background: #f8f9fa; padding: 20px; border-radius: 10px;">
-          <h3>📋 Datos del Cliente</h3>
-          <p><strong>Nombre:</strong> ${name}</p>
-          <p><strong>Email:</strong> ${email}</p>
-          ${phone ? `<p><strong>Teléfono:</strong> ${phone}</p>` : ''}
-          ${address ? `<p><strong>Dirección:</strong> ${address}</p>` : ''}
-          <p><strong>Fotos:</strong> ${photos.length}</p>
-          <p><strong>ID de Pedido:</strong> ${orderId}</p>
-          <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-AR')}</p>
-        </div>
-        <p><em>📎 ${photos.length} fotos procesadas correctamente</em></p>
-      `;
-
-      const vendorResult = await transporter.sendMail({
-        from: `"Magnético" <${emailUser}>`,
-        to: process.env.DESTINATION_EMAIL || emailUser,
-        replyTo: email,
-        subject: `📦 PEDIDO - ${orderId}`,
-        html: vendorHtml,
-        // 🔥 NO adjuntar archivos para evitar timeout
-      });
-
-      console.log('✅ Email enviado con Gmail');
-      return { success: true, provider: 'gmail' };
-    }
-
-    console.log('ℹ️ No hay configuración de email disponible');
+    console.log('ℹ️ No hay configuración de email disponible para fallback');
     return { simulated: true };
 
   } catch (error) {
-    console.error('❌ Error enviando email:', error.message);
+    console.error('❌ Error en fallback:', error.message);
     return { error: error.message, simulated: true };
   }
 };
@@ -234,21 +282,21 @@ const createMercadoPagoPreference = async (name, email, photoCount, unitPrice, o
 };
 
 // ------------------------------
-// 🔄 PROCESAMIENTO EN SEGUNDO PLANO SOLO PARA EMAIL
+// 🔄 PROCESAMIENTO EN SEGUNDO PLANO CON FOTOS
 // ------------------------------
 async function processEmailBackground({ name, email, phone, address, photos, orderId }) {
   try {
-    console.log(`🔄 Procesando email en segundo plano para ${orderId}...`);
+    console.log(`🔄 Procesando email CON FOTOS para ${orderId}...`);
     
-    // Solo enviar email al vendedor (NO al cliente)
-    const emailResult = await sendVendorEmail({
+    // Intentar enviar email con fotos adjuntas
+    const emailResult = await sendVendorEmailWithAttachments({
       name, email, phone, address, photos, orderId
     });
 
     if (emailResult.error) {
-      console.log(`⚠️ Email falló pero el pedido continúa: ${emailResult.error}`);
-    } else {
-      console.log(`✅ Email de vendedor procesado para ${orderId}`);
+      console.log(`⚠️ Email con fotos falló: ${emailResult.error}`);
+    } else if (emailResult.success) {
+      console.log(`✅ Email procesado: ${emailResult.photosAttached}/${photos.length} fotos adjuntas`);
     }
 
   } catch (error) {
@@ -257,7 +305,7 @@ async function processEmailBackground({ name, email, phone, address, photos, ord
 }
 
 // ------------------------------
-// 🚀 ENDPOINT PRINCIPAL - REDIRECCIÓN INMEDIATA A MERCADO PAGO
+// 🚀 ENDPOINT PRINCIPAL - CON FOTOS ADJUNTAS
 // ------------------------------
 router.post("/", upload.array("photos"), async (req, res) => {
   const orderId = `ORD-${Date.now().toString(36).toUpperCase()}`;
@@ -325,7 +373,7 @@ router.post("/", upload.array("photos"), async (req, res) => {
     const responseTime = Date.now() - startTime;
     console.log(`✅ Respuesta enviada en ${responseTime}ms para ${orderId}`);
 
-    // 🔥 PROCESAR EMAIL EN SEGUNDO PLANO (no bloqueante)
+    // 🔥 PROCESAR EMAIL CON FOTOS EN SEGUNDO PLANO (no bloqueante)
     setTimeout(async () => {
       try {
         await processEmailBackground({
