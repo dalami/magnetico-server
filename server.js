@@ -56,12 +56,16 @@ app.use(morgan(isProduction ? 'combined' : 'dev'));
 // -------------------------
 const generalLimiter = rateLimit({
   windowMs: 15 * 60 * 1000, // 15 minutos
-  max: 200, // Aumentado a 200 requests por ventana
+  max: 1000, // 🔥 AUMENTA TEMPORALMENTE a 1000
   message: { error: 'Demasiadas solicitudes, intenta más tarde.' },
   standardHeaders: true,
   legacyHeaders: false,
+  // 🔥 AGREGAR para debug
+  handler: (req, res) => {
+    console.log('🚫 Rate limit exceeded for IP:', req.ip);
+    res.status(429).json({ error: 'Demasiadas solicitudes, intenta más tarde.' });
+  }
 });
-
 // -------------------------
 // Configuración CORS para DonWeb
 // -------------------------
@@ -144,7 +148,7 @@ app.get('/api/health', (_req, res) => {
 // -------------------------
 // Aplicar rate limiting
 // -------------------------
-app.use(generalLimiter);
+ app.use(generalLimiter); 
 
 // -------------------------
 // Rutas modulares
