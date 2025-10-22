@@ -1,10 +1,14 @@
 // -------------------------
-// routes/admin.js - PRODUCTION READY
+// routes/admin.js - PRODUCTION READY (CON PERSISTENCIA)
 // -------------------------
 import express from "express";
 import rateLimit from "express-rate-limit";
 import { body, validationResult } from "express-validator";
-import { getUnitPrice, setRuntimeUnitPrice } from "../services/pricing.js";
+import { 
+  getUnitPrice, 
+  setRuntimeUnitPrice, 
+  setPermanentPrice  // 👈 NUEVA IMPORTACIÓN
+} from "../services/pricing.js";
 
 const router = express.Router();
 
@@ -102,40 +106,70 @@ const priceValidation = [
 ];
 
 // -------------------------
-// 📊 Endpoint: GET /api/admin/price
+// 🆕 ENDPOINT NUEVO: POST /api/admin/price/permanent
 // -------------------------
-router.get("/price", adminLimiter, adminOnly, (_req, res) => {
-  try {
-    const price = getUnitPrice();
-    
-    res.json({
-      success: true,
-      data: {
-        unit_price: price,
-        currency_id: "ARS",
-        updated_at: new Date().toISOString(),
-        environment: process.env.NODE_ENV || "development"
-      },
-      metadata: {
-        request_id: _req.adminRequestId,
-        persisted: false // Indica que es en memoria
+router.post("/price/permanent", 
+  adminLimiter, 
+  adminOnly, 
+  priceValidation,
+  async (req, res) => {
+    try {
+      // Validar resultados de express-validator
+      const errors = validationResult(req);
+      if (!errors.isEmpty()) {
+        return res.status(400).json({
+          success: false,
+          error: "Datos de entrada inválidos",
+          details: errors.array(),
+          request_id: req.adminRequestId
+        });
       }
-    });
 
-  } catch (error) {
-    console.error(`❌ [${_req.adminRequestId}] Error al obtener precio:`, error.message);
-    
-    res.status(500).json({
-      success: false,
-      error: "Error al obtener precio actual",
-      code: "PRICE_FETCH_ERROR",
-      request_id: _req.adminRequestId
-    });
+      const newPrice = Number(req.body.unit_price);
+      const oldPrice = getUnitPrice();
+      
+      console.log(`💰 [${req.adminRequestId}] Actualizando precio PERMANENTE: $${oldPrice} → $${newPrice}`);
+
+      // Actualizar precio PERMANENTEMENTE
+      const result = await setPermanentPrice(newPrice);
+      
+      // Log del cambio permanente
+      console.log(`✅ [${req.adminRequestId}] Precio actualizado PERMANENTEMENTE: $${result.newPrice}`);
+      
+      res.json({
+        success: true,
+        message: "Precio actualizado PERMANENTEMENTE",
+        data: {
+          previous_price: oldPrice,
+          new_price: result.newPrice,
+          change_percent: result.changePercent,
+          currency_id: "ARS",
+          updated_at: result.timestamp,
+          persisted: true, // 👈 Indica que es permanente
+          storage: result.storage
+        },
+        metadata: {
+          request_id: req.adminRequestId,
+          note: "Este cambio sobrevive a reinicios del servidor"
+        }
+      });
+
+    } catch (error) {
+      console.error(`❌ [${req.adminRequestId}] Error al cambiar precio permanente:`, error.message);
+      
+      res.status(500).json({
+        success: false,
+        error: "Error interno al cambiar el precio permanentemente",
+        code: "PERMANENT_PRICE_UPDATE_ERROR",
+        request_id: req.adminRequestId,
+        ...(process.env.NODE_ENV === "development" && { debug: error.message })
+      });
+    }
   }
-});
+);
 
 // -------------------------
-// ✏️ Endpoint: PUT /api/admin/price
+// ✏️ Endpoint: PUT /api/admin/price (TEMPORAL - se mantiene igual)
 // -------------------------
 router.put("/price", 
   adminLimiter, 
@@ -159,7 +193,7 @@ router.put("/price",
       
       console.log(`💰 [${req.adminRequestId}] Actualizando precio: $${oldPrice} → $${newPrice}`);
 
-      // Actualizar precio
+      // Actualizar precio (temporal)
       const updatedPrice = setRuntimeUnitPrice(newPrice);
       
       // Log del cambio
@@ -174,11 +208,12 @@ router.put("/price",
           change_percent: ((updatedPrice - oldPrice) / oldPrice * 100).toFixed(2),
           currency_id: "ARS",
           updated_at: new Date().toISOString(),
-          persisted: false // Indica que es en memoria
+          persisted: false // 👈 Indica que es en memoria
         },
         metadata: {
           request_id: req.adminRequestId,
-          warning: "Este cambio es en memoria y se perderá al reiniciar el servidor"
+          warning: "Este cambio es en memoria y se perderá al reiniciar el servidor",
+          recommendation: "Use POST /api/admin/price/permanent para cambios permanentes"
         }
       });
 
@@ -195,6 +230,39 @@ router.put("/price",
     }
   }
 );
+
+// -------------------------
+// 📊 Endpoint: GET /api/admin/price
+// -------------------------
+router.get("/price", adminLimiter, adminOnly, (_req, res) => {
+  try {
+    const price = getUnitPrice();
+    
+    res.json({
+      success: true,
+      data: {
+        unit_price: price,
+        currency_id: "ARS",
+        updated_at: new Date().toISOString(),
+        environment: process.env.NODE_ENV || "development"
+      },
+      metadata: {
+        request_id: _req.adminRequestId,
+        note: "Use POST /price/permanent para cambios que sobrevivan reinicios"
+      }
+    });
+
+  } catch (error) {
+    console.error(`❌ [${_req.adminRequestId}] Error al obtener precio:`, error.message);
+    
+    res.status(500).json({
+      success: false,
+      error: "Error al obtener precio actual",
+      code: "PRICE_FETCH_ERROR",
+      request_id: _req.adminRequestId
+    });
+  }
+});
 
 // -------------------------
 // 📈 Endpoint: GET /api/admin/stats
@@ -215,7 +283,11 @@ router.get("/stats", adminLimiter, adminOnly, (_req, res) => {
       },
       api: {
         rate_limit: "30/15min",
-        endpoints: ["/price", "/stats"]
+        endpoints: [
+          { path: "/price", methods: ["GET", "PUT"], type: "temporal" },
+          { path: "/price/permanent", methods: ["POST"], type: "permanent" },
+          { path: "/stats", methods: ["GET"] }
+        ]
       }
     };
 
@@ -254,7 +326,8 @@ router.get("/health", adminOnly, (_req, res) => {
       configured: !!process.env.ADMIN_KEY
     },
     endpoints: [
-      { path: "/price", methods: ["GET", "PUT"] },
+      { path: "/price", methods: ["GET", "PUT"], persistence: "temporal" },
+      { path: "/price/permanent", methods: ["POST"], persistence: "permanent" },
       { path: "/stats", methods: ["GET"] },
       { path: "/health", methods: ["GET"] }
     ],

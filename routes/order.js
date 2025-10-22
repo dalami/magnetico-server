@@ -1,5 +1,5 @@
 // -------------------------
-// routes/order.js - VERSIÓN CON MEJOR LOGGING
+// routes/order.js -
 // -------------------------
 import express from "express";
 import multer from "multer";
@@ -62,34 +62,78 @@ const sendVendorEmailWithAttachments = async ({
     console.log(`📎 ${attachments.length} fotos preparadas para enviar`);
 
     const emailData = {
-      from: "Magnético <onboarding@resend.dev>",
+     from: "Magnético Fotoimanes <pedidos@magnetico-fotoimanes.com>", 
       to: process.env.DESTINATION_EMAIL,
       reply_to: email,
-      subject: `📦 PEDIDO CON ${photos.length} FOTOS - ${orderId}`,
+      subject: `📦 Nuevo Pedido - ${photos.length} Fotoimanes - ${orderId}`,
       html: `
-        <div style="font-family: Arial, sans-serif; max-width: 600px; margin: 0 auto;">
-          <h2 style="color: #4CAF50; text-align: center;">🎉 NUEVO PEDIDO - ${
-            photos.length
-          } FOTOS</h2>
-          
-          <div style="background: #f8f9fa; padding: 20px; border-radius: 10px; margin: 15px 0;">
-            <h3 style="color: #333; border-bottom: 2px solid #4CAF50; padding-bottom: 10px;">📋 Datos del Cliente</h3>
-            <p><strong>Nombre:</strong> ${name}</p>
-            <p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
-            ${
-              phone
-                ? `<p><strong>Teléfono:</strong> <a href="tel:${phone}">${phone}</a></p>`
-                : ""
-            }
-            ${address ? `<p><strong>Dirección:</strong> ${address}</p>` : ""}
-            <p><strong>Total de Fotos:</strong> ${photos.length}</p>
-            <p><strong>Adjuntadas:</strong> ${attachments.length}</p>
-            <p><strong>ID de Pedido:</strong> ${orderId}</p>
-            <p><strong>Fecha:</strong> ${new Date().toLocaleString("es-AR")}</p>
-          </div>
+    <!DOCTYPE html>
+    <html>
+    <head>
+        <meta charset="utf-8">
+        <style>
+            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
+            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+            .header { background: #8B5CF6; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
+            .content { background: #f8f9fa; padding: 20px; border-radius: 0 0 10px 10px; }
+            .section { background: white; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid #8B5CF6; }
+            .total { background: #e8f5e8; padding: 15px; font-weight: bold; font-size: 1.2em; }
+        </style>
+    </head>
+    <body>
+        <div class="container">
+            <div class="header">
+                <h1>🎉 Nuevo Pedido Recibido</h1>
+                <p>Magnético Fotoimanes</p>
+            </div>
+            <div class="content">
+                <div class="section">
+                    <h3>📋 Información del Cliente</h3>
+                    <p><strong>Nombre:</strong> ${name}</p>
+                    <p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
+                    ${
+                      phone
+                        ? `<p><strong>Teléfono:</strong> <a href="tel:${phone}">${phone}</a></p>`
+                        : ""
+                    }
+                    ${
+                      address
+                        ? `<p><strong>Dirección:</strong> ${address}</p>`
+                        : ""
+                    }
+                </div>
+                
+                <div class="section">
+                    <h3>🖼️ Detalles del Pedido</h3>
+                    <p><strong>Número de Fotos:</strong> ${photos.length}</p>
+                    <p><strong>ID de Pedido:</strong> ${orderId}</p>
+                    <p><strong>Fecha:</strong> ${new Date().toLocaleString(
+                      "es-AR"
+                    )}</p>
+                </div>
+                
+                <div class="section total">
+                    <h3>💰 Resumen</h3>
+                    <p><strong>Total de Fotos:</strong> ${photos.length}</p>
+                    <p><strong>Fotos Adjuntas:</strong> ${
+                      attachments.length
+                    }</p>
+                    <p style="color: #2E7D32; margin-top: 10px;">
+                        <strong>📬 Este pedido requiere tu atención inmediata</strong>
+                    </p>
+                </div>
+            </div>
         </div>
-      `,
+    </body>
+    </html>
+  `,
       attachments: attachments,
+      // 🔥 AGREGAR HEADERS IMPORTANTES
+      headers: {
+        "X-Priority": "1",
+        "X-MSMail-Priority": "High",
+        Importance: "high",
+      },
     };
 
     console.log("🔄 Enviando email via Resend...");
@@ -207,6 +251,7 @@ const createMercadoPagoPreference = async (
     );
   }
 };
+
 // ------------------------------
 // 🔄 PROCESAMIENTO EN SEGUNDO PLANO
 // ------------------------------

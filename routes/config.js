@@ -1,5 +1,5 @@
 // -------------------------
-// routes/config.js - PRODUCTION READY
+// routes/config.js - PRODUCTION READY (CORREGIDO)
 // -------------------------
 import express from "express";
 import rateLimit from "express-rate-limit";
@@ -87,13 +87,41 @@ const getCachedConfig = () => {
 };
 
 // -------------------------
-// 🔧 Endpoint principal de configuración
+// 💰 Endpoint ÚNICO para precio - FORMATO CORRECTO
+// -------------------------
+router.get("/price", configLimiter, (_req, res) => {
+  try {
+    const config = getCachedConfig();
+    
+    res.set('Cache-Control', 'public, max-age=60');
+    
+    // ✅ FORMATO CORRECTO que el frontend espera
+    res.json({
+      success: true,
+      unit_price: config.unit_price,      // ← unit_price (no price)
+      currency_id: config.currency_id,    // ← currency_id (no currency)
+      updated_at: config.updated_at
+    });
+
+  } catch (error) {
+    console.error("❌ Error en /api/config/price:", error.message);
+    
+    res.status(500).json({
+      success: false,
+      error: "Error al obtener precio",
+      unit_price: null,
+      currency_id: "ARS"
+    });
+  }
+});
+
+// -------------------------
+// 🔧 Endpoint principal de configuración (OPCIONAL)
 // -------------------------
 router.get("/", configLimiter, (_req, res) => {
   try {
     const config = getCachedConfig();
     
-    // Header de cache para el cliente (1 minuto)
     res.set('Cache-Control', 'public, max-age=60');
     
     res.json({
@@ -106,10 +134,7 @@ router.get("/", configLimiter, (_req, res) => {
     });
 
   } catch (error) {
-    console.error("❌ Error en /api/config:", {
-      message: error.message,
-      timestamp: new Date().toISOString()
-    });
+    console.error("❌ Error en /api/config:", error.message);
 
     const statusCode = error.message.includes('no disponible') ? 503 : 500;
     
@@ -118,33 +143,6 @@ router.get("/", configLimiter, (_req, res) => {
       error: "Error al obtener configuración",
       message: process.env.NODE_ENV === "development" ? error.message : "Servicio temporalmente no disponible",
       ...(process.env.NODE_ENV === "development" && { debug: error.stack })
-    });
-  }
-});
-
-// -------------------------
-// 💰 Endpoint específico para precio (para frontend que solo necesita precio)
-// -------------------------
-router.get("/price", configLimiter, (_req, res) => {
-  try {
-    const config = getCachedConfig();
-    
-    res.set('Cache-Control', 'public, max-age=60');
-    
-    res.json({
-      success: true,
-      price: config.unit_price,
-      currency: config.currency_id,
-      updated_at: config.updated_at
-    });
-
-  } catch (error) {
-    console.error("❌ Error en /api/config/price:", error.message);
-    
-    res.status(500).json({
-      success: false,
-      error: "Error al obtener precio",
-      price: null
     });
   }
 });
