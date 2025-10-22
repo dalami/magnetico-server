@@ -62,7 +62,7 @@ const sendVendorEmailWithAttachments = async ({
     console.log(`📎 ${attachments.length} fotos preparadas para enviar`);
 
     const emailData = {
-     from: "Magnético Fotoimanes <pedidos@magnetico-fotoimanes.com>", 
+      from: `Magnético Fotoimanes <${process.env.EMAIL_USER}>`,
       to: process.env.DESTINATION_EMAIL,
       reply_to: email,
       subject: `📦 Nuevo Pedido - ${photos.length} Fotoimanes - ${orderId}`,
