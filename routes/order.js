@@ -1,5 +1,5 @@
 // -------------------------
-// routes/order.js - VERSIÓN CORREGIDA
+// routes/order.js - VERSIÓN COMPLETA CORREGIDA
 // -------------------------
 import express from "express";
 import multer from "multer";
@@ -171,14 +171,16 @@ const sendVendorEmailWithAttachments = async ({
 };
 
 // ------------------------------
-// 💳 Mercado Pago Service - CORREGIDO CON PAYMENT_METHODS
+// 💳 Mercado Pago Service - CORREGIDO COMPLETAMENTE
 // ------------------------------
 const createMercadoPagoPreference = async (
   name,
   email,
   photoCount,
   unitPrice,
-  orderId
+  totalPrice,
+  orderId,
+  tipo = "fotoimanes_unitario"
 ) => {
   try {
     const mpToken = process.env.MP_ACCESS_TOKEN;
@@ -188,38 +190,49 @@ const createMercadoPagoPreference = async (
       throw new Error("Token de Mercado Pago no configurado");
     }
 
-    console.log(`💳 Creando preferencia MP para ${orderId}...`);
+    console.log(`💳 Creando preferencia MP para ${orderId} (${tipo})...`);
 
     // URLs seguras
-    const frontendUrl =
-      process.env.NODE_ENV === "production"
-        ? process.env.FRONTEND_URL || "https://magnetico-fotoimanes.com"
-        : "https://magnetico-fotoimanes.com";
+    const frontendUrl = "https://magnetico-fotoimanes.com";
+    const backendUrl = "https://magnetico-server-1.onrender.com";
 
-    const backendUrl =
-      process.env.BACKEND_URL || "https://magnetico-server-1.onrender.com";
-
-    // 🔥 CORRECCIÓN CRÍTICA: Agregar payment_methods para evitar el bug del botón
-    const payload = {
-      items: [
+    // 🔥 CORRECCIÓN CRÍTICA: Configuración diferente para planes vs unitario
+    let items;
+    
+    if (tipo === "fotoimanes_plan") {
+      // 🔥 PARA PLANES: 1 item con precio total
+      items = [
+        {
+          title: `Plan Fotoimanes - ${photoCount} unidades`,
+          description: `Pedido de ${name} - ${photoCount} fotoimanes personalizados`,
+          quantity: 1,  // 🔥 SIEMPRE 1 para planes
+          currency_id: "ARS",
+          unit_price: totalPrice,  // 🔥 PRECIO TOTAL del plan
+        },
+      ];
+    } else {
+      // 🔥 PARA SISTEMA UNITARIO: múltiples items
+      items = [
         {
           title: `${photoCount} Fotos Imantadas Magnético`,
           description: `Pedido de ${name} - ${photoCount} fotos personalizadas`,
-          quantity: photoCount,
+          quantity: photoCount,  // 🔥 CANTIDAD = número de fotos
           currency_id: "ARS",
-          unit_price: unitPrice,
+          unit_price: unitPrice,  // 🔥 PRECIO UNITARIO
         },
-      ],
+      ];
+    }
+
+    // 🔥 SIMPLIFICAR payment_methods - QUITAR configuraciones problemáticas
+    const payload = {
+      items: items,
       payer: {
         email: email,
         name: name,
       },
-      // 🔥 AGREGADO: Configuración explícita de payment methods
+      // 🔥 CORRECCIÓN: Configuración MÍNIMA de payment_methods
       payment_methods: {
-        excluded_payment_methods: [],
-        excluded_payment_types: [],
-        installments: 1,
-        default_installments: 1
+        // Dejar que MP use los valores por defecto
       },
       back_urls: {
         success: `${frontendUrl}/success`,
@@ -296,7 +309,7 @@ async function processEmailBackground({
 }
 
 // ------------------------------
-// 🚀 ENDPOINT PRINCIPAL - CORREGIDO PARA PLANES
+// 🚀 ENDPOINT PRINCIPAL - COMPLETAMENTE CORREGIDO
 // ------------------------------
 router.post("/", upload.array("photos"), async (req, res) => {
   const orderId = `ORD-${Date.now().toString(36).toUpperCase()}`;
@@ -356,7 +369,7 @@ router.post("/", upload.array("photos"), async (req, res) => {
       if (tipo === "fotoimanes_plan" && precio_total) {
         // Usar precio del plan
         totalPrice = parseFloat(precio_total);
-        unitPrice = totalPrice / photoCount;
+        unitPrice = totalPrice / photoCount; // Para cálculo interno
         console.log(`💰 Plan ${plan}: $${totalPrice} total ($${unitPrice} c/u)`);
       } else {
         // Precio unitario normal
@@ -370,14 +383,16 @@ router.post("/", upload.array("photos"), async (req, res) => {
       totalPrice = unitPrice * photoCount;
     }
 
-    // Crear preferencia MP
+    // 🔥 CORRECCIÓN: Llamada correcta a createMercadoPagoPreference
     console.log(`💳 Creando preferencia MP...`);
     const preference = await createMercadoPagoPreference(
       name.trim(),
       email.trim(),
       photoCount,
-      tipo === "fotoimanes_plan" ? totalPrice / photoCount : unitPrice, // 🔥 Precio unitario correcto
-      orderId
+      unitPrice,           // 🔥 precio unitario base
+      totalPrice,          // 🔥 precio total 
+      orderId,
+      tipo                 // 🔥 tipo de pedido
     );
 
     // Responder al cliente INMEDIATAMENTE
