@@ -71,76 +71,71 @@ const sendVendorEmailWithAttachments = async ({
       }>`,
       to: process.env.DESTINATION_EMAIL,
       reply_to: email,
-      subject: `📦 Nuevo Pedido - ${photos.length} Fotoimanes - ${orderId}`,
+      // 🔥 CAMBIAR ASUNTO (menos emojis, más profesional)
+      subject: `Pedido ${orderId} - ${photos.length} Fotoimanes - ${name}`,
       html: `
-    <!DOCTYPE html>
-    <html>
-    <head>
-        <meta charset="utf-8">
-        <style>
-            body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; }
-            .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-            .header { background: #8B5CF6; color: white; padding: 20px; text-align: center; border-radius: 10px 10px 0 0; }
-            .content { background: #f8f9fa; padding: 20px; border-radius: 0 0 10px 10px; }
-            .section { background: white; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid #8B5CF6; }
-            .total { background: #e8f5e8; padding: 15px; font-weight: bold; font-size: 1.2em; }
-        </style>
-    </head>
-    <body>
-        <div class="container">
-            <div class="header">
-                <h1>🎉 Nuevo Pedido Recibido</h1>
-                <p>Magnético Fotoimanes</p>
+<!DOCTYPE html>
+<html>
+<head>
+    <meta charset="utf-8">
+    <style>
+        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
+        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
+        .header { background: #8B5CF6; color: white; padding: 20px; text-align: center; }
+        .content { background: #f8f9fa; padding: 20px; }
+        .section { background: white; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid #8B5CF6; }
+        .total { background: #e8f5e8; padding: 15px; font-weight: bold; }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <div class="header">
+            <h1>Nuevo Pedido Recibido</h1>
+            <p>Magnético Fotoimanes</p>
+        </div>
+        <div class="content">
+            <div class="section">
+                <h3>Información del Cliente</h3>
+                <p><strong>Nombre:</strong> ${name}</p>
+                <p><strong>Email:</strong> ${email}</p>
+                ${phone ? `<p><strong>Teléfono:</strong> ${phone}</p>` : ""}
+                ${
+                  address ? `<p><strong>Dirección:</strong> ${address}</p>` : ""
+                }
             </div>
-            <div class="content">
-                <div class="section">
-                    <h3>📋 Información del Cliente</h3>
-                    <p><strong>Nombre:</strong> ${name}</p>
-                    <p><strong>Email:</strong> <a href="mailto:${email}">${email}</a></p>
-                    ${
-                      phone
-                        ? `<p><strong>Teléfono:</strong> <a href="tel:${phone}">${phone}</a></p>`
-                        : ""
-                    }
-                    ${
-                      address
-                        ? `<p><strong>Dirección:</strong> ${address}</p>`
-                        : ""
-                    }
-                </div>
-                
-                <div class="section">
-                    <h3>🖼️ Detalles del Pedido</h3>
-                    <p><strong>Número de Fotos:</strong> ${photos.length}</p>
-                    <p><strong>ID de Pedido:</strong> ${orderId}</p>
-                    <p><strong>Fecha:</strong> ${new Date().toLocaleString(
-                      "es-AR"
-                    )}</p>
-                </div>
-                
-                <div class="section total">
-                    <h3>💰 Resumen</h3>
-                    <p><strong>Total de Fotos:</strong> ${photos.length}</p>
-                    <p><strong>Fotos Adjuntas:</strong> ${
-                      attachments.length
-                    }</p>
-                    <p style="color: #2E7D32; margin-top: 10px;">
-                        <strong>📬 Este pedido requiere tu atención inmediata</strong>
-                    </p>
-                </div>
+            
+            <div class="section">
+                <h3>Detalles del Pedido</h3>
+                <p><strong>Número de Fotos:</strong> ${photos.length}</p>
+                <p><strong>ID de Pedido:</strong> ${orderId}</p>
+                <p><strong>Fecha:</strong> ${new Date().toLocaleString(
+                  "es-AR"
+                )}</p>
+            </div>
+            
+            <div class="section total">
+                <h3>Resumen del Pedido</h3>
+                <p><strong>Total de Fotos:</strong> ${photos.length}</p>
+                <p><strong>Fotos Adjuntas:</strong> ${attachments.length}</p>
+                <p><em>Este pedido requiere atención inmediata</em></p>
             </div>
         </div>
-    </body>
-    </html>
+    </div>
+</body>
+</html>
   `,
       attachments: attachments,
+      // 🔥 MEJORAR HEADERS ANTI-SPAM
       headers: {
-        "X-Priority": "1",
-        "X-MSMail-Priority": "High",
-        Importance: "high",
+        "X-Priority": "3", // 🔥 Cambiar a 3 (Normal) en lugar de 1 (High)
+        "X-MSMail-Priority": "Normal",
+        Importance: "Normal",
+        "List-Unsubscribe": "<mailto:unsubscribe@magnetico-fotoimanes.com>",
+        Precedence: "bulk",
+        "Auto-Submitted": "auto-generated",
+        "X-Auto-Response-Suppress": "OOF, AutoReply",
       },
     };
-
     console.log("🔄 Enviando email via Resend...");
 
     const response = await axios.post(
@@ -234,13 +229,19 @@ const createMercadoPagoPreference = async (
           quantity: tipo === "fotoimanes_plan" ? 1 : photoCount,
           currency_id: "ARS",
           unit_price: tipo === "fotoimanes_plan" ? totalPrice : unitPrice,
-          // 🔥 AGREGAR CATEGORY_ID (CRÍTICO)
-          category_id: "others", // Categoría por defecto para productos varios
+          category_id: "others",
         },
       ],
-      // 🔥 CORRECCIÓN: Configuración MÍNIMA de payment_methods
+      payer: {
+        email: email,
+        name: name,
+      },
+      // 🔥 AGREGAR LOCALE (SOLUCIÓN AL PROBLEMA)
+      metadata: {
+        locale: "es-AR", // 🔥 ESTO FALTABA
+      },
       payment_methods: {
-        // Dejar que MP use los valores por defecto
+        // Configuración mínima
       },
       back_urls: {
         success: `${frontendUrl}/success`,
