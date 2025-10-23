@@ -162,29 +162,53 @@ console.log('✅ Rutas cargadas: /api/send-photos, /api/config, /api/admin');
 // -------------------------
 // Webhook MP (raw body)
 // -------------------------
-app.post('/api/webhook', 
+app.post('/api/webhook',      // ✅ CORRECTO: usar 'app' en lugar de 'router'
   express.raw({ type: "application/json", limit: "1mb" }), 
-  (req, res) => {
+  async (req, res) => {
     try {
-      const signature = req.headers['x-signature'] || req.headers['x-webhook-signature'];
-      const payload = req.body.toString();
-      
-      console.log('🟢 Webhook MP recibido en DonWeb:', {
-        signature: signature ? 'present' : 'missing',
-        payloadLength: payload.length,
+      console.log('🟢 Webhook MP recibido:', {
+        headers: req.headers,
         timestamp: new Date().toISOString()
       });
 
-      // TODO: Validar firma del webhook
-      
+      const signature = req.headers['x-signature'];
+      const requestId = req.headers['x-request-id'];
+      const payload = req.body.toString();
+      const data = JSON.parse(payload);
+
+      // 🔥 VALIDACIÓN DE FIRMA (requerida por MP)
+      if (signature) {
+        // Extraer ts y v1 del signature
+        const parts = signature.split(',');
+        let ts, v1;
+        parts.forEach(part => {
+          const [key, value] = part.split('=');
+          if (key === 'ts') ts = value;
+          if (key === 'v1') v1 = value;
+        });
+
+        // TODO: Implementar validación HMAC con tu secret key de MP
+        console.log('🔐 Signature validation needed:', { ts, v1, requestId });
+      }
+
+      // Procesar el evento
+      if (data.type === 'payment') {
+        const paymentId = data.data.id;
+        console.log(`💰 Payment event: ${paymentId}, Action: ${data.action}`);
+        
+        // Aquí actualizás el estado de tu pedido
+        // Buscar por external_reference = tu orderId
+      }
+
+      // 🔥 RESPONDER INMEDIATAMENTE (MP espera < 22 segundos)
       res.status(200).json({ status: 'webhook received' });
+      
     } catch (error) {
-      console.error('❌ Error procesando webhook:', error);
-      res.status(400).json({ error: 'Invalid webhook payload' });
+      console.error('❌ Error en webhook:', error);
+      res.status(400).json({ error: 'Invalid webhook' });
     }
   }
 );
-
 // -------------------------
 // Manejo de rutas no encontradas
 // -------------------------
