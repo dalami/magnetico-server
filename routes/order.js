@@ -66,7 +66,9 @@ const sendVendorEmailWithAttachments = async ({
     console.log(`📎 ${attachments.length} fotos preparadas para enviar`);
 
     const emailData = {
-      from: `Magnético Fotoimanes <${process.env.EMAIL_FROM || 'no-reply@magnetico-fotoimanes.com'}>`,
+      from: `Magnético Fotoimanes <${
+        process.env.EMAIL_FROM || "no-reply@magnetico-fotoimanes.com"
+      }>`,
       to: process.env.DESTINATION_EMAIL,
       reply_to: email,
       subject: `📦 Nuevo Pedido - ${photos.length} Fotoimanes - ${orderId}`,
@@ -198,16 +200,16 @@ const createMercadoPagoPreference = async (
 
     // 🔥 CORRECCIÓN CRÍTICA: Configuración diferente para planes vs unitario
     let items;
-    
+
     if (tipo === "fotoimanes_plan") {
       // 🔥 PARA PLANES: 1 item con precio total
       items = [
         {
           title: `Plan Fotoimanes - ${photoCount} unidades`,
           description: `Pedido de ${name} - ${photoCount} fotoimanes personalizados`,
-          quantity: 1,  // 🔥 SIEMPRE 1 para planes
+          quantity: 1, // 🔥 SIEMPRE 1 para planes
           currency_id: "ARS",
-          unit_price: totalPrice,  // 🔥 PRECIO TOTAL del plan
+          unit_price: totalPrice, // 🔥 PRECIO TOTAL del plan
         },
       ];
     } else {
@@ -216,20 +218,26 @@ const createMercadoPagoPreference = async (
         {
           title: `${photoCount} Fotos Imantadas Magnético`,
           description: `Pedido de ${name} - ${photoCount} fotos personalizadas`,
-          quantity: photoCount,  // 🔥 CANTIDAD = número de fotos
+          quantity: photoCount, // 🔥 CANTIDAD = número de fotos
           currency_id: "ARS",
-          unit_price: unitPrice,  // 🔥 PRECIO UNITARIO
+          unit_price: unitPrice, // 🔥 PRECIO UNITARIO
         },
       ];
     }
 
     // 🔥 SIMPLIFICAR payment_methods - QUITAR configuraciones problemáticas
     const payload = {
-      items: items,
-      payer: {
-        email: email,
-        name: name,
-      },
+      items: [
+        {
+          title: `${photoCount} Fotos Imantadas Magnético`,
+          description: `Pedido de ${name} - ${photoCount} fotos personalizadas`,
+          quantity: tipo === "fotoimanes_plan" ? 1 : photoCount,
+          currency_id: "ARS",
+          unit_price: tipo === "fotoimanes_plan" ? totalPrice : unitPrice,
+          // 🔥 AGREGAR CATEGORY_ID (CRÍTICO)
+          category_id: "others", // Categoría por defecto para productos varios
+        },
+      ],
       // 🔥 CORRECCIÓN: Configuración MÍNIMA de payment_methods
       payment_methods: {
         // Dejar que MP use los valores por defecto
@@ -319,7 +327,8 @@ router.post("/", upload.array("photos"), async (req, res) => {
   console.log(`🌐 Origen: ${req.get("origin")}`);
 
   try {
-    const { name, email, phone, address, plan, cantidad, precio_total, tipo } = req.body;
+    const { name, email, phone, address, plan, cantidad, precio_total, tipo } =
+      req.body;
     const photos = req.files || [];
     const photoCount = photos.length;
 
@@ -330,7 +339,7 @@ router.post("/", upload.array("photos"), async (req, res) => {
       address: address ? "✓" : "✗",
       photos: photoCount,
       plan: plan || "unitario",
-      cantidad: cantidad || "N/A"
+      cantidad: cantidad || "N/A",
     });
 
     // 🔥 VALIDACIONES MEJORADAS PARA PLANES
@@ -346,10 +355,12 @@ router.post("/", upload.array("photos"), async (req, res) => {
     if (tipo === "fotoimanes_plan" && plan && cantidad) {
       // Validación para planes
       if (photoCount !== parseInt(cantidad)) {
-        console.log(`❌ Plan ${plan}: esperaba ${cantidad} fotos, recibió ${photoCount}`);
+        console.log(
+          `❌ Plan ${plan}: esperaba ${cantidad} fotos, recibió ${photoCount}`
+        );
         return res.status(400).json({
           success: false,
-          error: `El plan ${plan} incluye ${cantidad} fotoimanes. Subiste ${photoCount} fotos.`
+          error: `El plan ${plan} incluye ${cantidad} fotoimanes. Subiste ${photoCount} fotos.`,
         });
       }
     } else {
@@ -370,12 +381,16 @@ router.post("/", upload.array("photos"), async (req, res) => {
         // Usar precio del plan
         totalPrice = parseFloat(precio_total);
         unitPrice = totalPrice / photoCount; // Para cálculo interno
-        console.log(`💰 Plan ${plan}: $${totalPrice} total ($${unitPrice} c/u)`);
+        console.log(
+          `💰 Plan ${plan}: $${totalPrice} total ($${unitPrice} c/u)`
+        );
       } else {
         // Precio unitario normal
         unitPrice = getUnitPrice();
         totalPrice = unitPrice * photoCount;
-        console.log(`💰 Sistema unitario: $${unitPrice} c/u = $${totalPrice} total`);
+        console.log(
+          `💰 Sistema unitario: $${unitPrice} c/u = $${totalPrice} total`
+        );
       }
     } catch (priceError) {
       console.error("❌ Error obteniendo precio:", priceError);
@@ -389,17 +404,18 @@ router.post("/", upload.array("photos"), async (req, res) => {
       name.trim(),
       email.trim(),
       photoCount,
-      unitPrice,           // 🔥 precio unitario base
-      totalPrice,          // 🔥 precio total 
+      unitPrice, // 🔥 precio unitario base
+      totalPrice, // 🔥 precio total
       orderId,
-      tipo                 // 🔥 tipo de pedido
+      tipo // 🔥 tipo de pedido
     );
 
     // Responder al cliente INMEDIATAMENTE
     console.log(`⚡ Enviando respuesta al cliente...`);
     res.status(200).json({
       success: true,
-      message: "✅ Pedido procesado correctamente. Redirigiendo a Mercado Pago...",
+      message:
+        "✅ Pedido procesado correctamente. Redirigiendo a Mercado Pago...",
       orderId: orderId,
       payment: {
         init_point: preference.init_point,
@@ -429,7 +445,6 @@ router.post("/", upload.array("photos"), async (req, res) => {
         console.error(`❌ Error crítico en email background:`, emailError);
       }
     }, 500);
-
   } catch (error) {
     console.error(`💥 ERROR CRÍTICO en ${orderId}:`, {
       message: error.message,
