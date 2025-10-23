@@ -1,229 +1,63 @@
 // -------------------------
-// routes/order.js - VERSIÓN COMPLETAMENTE CORREGIDA
+// routes/order.js - VERSIÓN DE EMERGENCIA
 // -------------------------
 import express from "express";
 import multer from "multer";
 import axios from "axios";
-import { getUnitPrice } from "../services/pricing.js";
 
 const router = express.Router();
 
-// ------------------------------
-// 🔥 Multer Configuración MEJORADA
-// ------------------------------
+// Configuración simplificada de multer
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 3 * 1024 * 1024,
-    files: 20, // 🔥 Aumentado a 20 para planes
+    files: 20,
   },
 });
 
-// ------------------------------
-// 📧 Servicio de Email con RESEND - CORREGIDO
-// ------------------------------
-const sendVendorEmailWithAttachments = async ({
-  name,
-  email,
-  phone,
-  address,
-  photos,
-  orderId,
-}) => {
-  try {
-    const RESEND_API_KEY = process.env.RESEND_API_KEY;
-
-    if (!RESEND_API_KEY) {
-      console.log("❌ No hay API key de Resend configurada");
-      throw new Error("RESEND_API_KEY no configurada");
-    }
-
-    console.log(`📧 Preparando email con ${photos.length} fotos...`);
-
-    // Convertir fotos a base64 - MEJOR MANEJO DE ERRORES
-    const attachments = photos
-      .slice(0, 10) // 🔥 Aumentado a 10 fotos máximo
-      .map((file, index) => {
-        try {
-          if (!file.buffer) {
-            console.warn(`⚠️ Foto ${index + 1} sin buffer`);
-            return null;
-          }
-          return {
-            filename: `Foto_${index + 1}_${orderId}.jpg`,
-            content: file.buffer.toString("base64"),
-          };
-        } catch (error) {
-          console.error(
-            `❌ Error procesando foto ${index + 1}:`,
-            error.message
-          );
-          return null;
-        }
-      })
-      .filter((attachment) => attachment !== null);
-
-    console.log(`📎 ${attachments.length} fotos preparadas para enviar`);
-
-    const emailData = {
-      from: `Magnético Fotoimanes <${
-        process.env.EMAIL_FROM || "no-reply@magnetico-fotoimanes.com"
-      }>`,
-      to: process.env.DESTINATION_EMAIL,
-      reply_to: email,
-      // 🔥 CAMBIAR ASUNTO (menos emojis, más profesional)
-      subject: `Pedido ${orderId} - ${photos.length} Fotoimanes - ${name}`,
-      html: `
-<!DOCTYPE html>
-<html>
-<head>
-    <meta charset="utf-8">
-    <style>
-        body { font-family: Arial, sans-serif; line-height: 1.6; color: #333; margin: 0; padding: 0; }
-        .container { max-width: 600px; margin: 0 auto; padding: 20px; }
-        .header { background: #8B5CF6; color: white; padding: 20px; text-align: center; }
-        .content { background: #f8f9fa; padding: 20px; }
-        .section { background: white; padding: 15px; margin: 10px 0; border-radius: 8px; border-left: 4px solid #8B5CF6; }
-        .total { background: #e8f5e8; padding: 15px; font-weight: bold; }
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <h1>Nuevo Pedido Recibido</h1>
-            <p>Magnético Fotoimanes</p>
-        </div>
-        <div class="content">
-            <div class="section">
-                <h3>Información del Cliente</h3>
-                <p><strong>Nombre:</strong> ${name}</p>
-                <p><strong>Email:</strong> ${email}</p>
-                ${phone ? `<p><strong>Teléfono:</strong> ${phone}</p>` : ""}
-                ${
-                  address ? `<p><strong>Dirección:</strong> ${address}</p>` : ""
-                }
-            </div>
-            
-            <div class="section">
-                <h3>Detalles del Pedido</h3>
-                <p><strong>Número de Fotos:</strong> ${photos.length}</p>
-                <p><strong>ID de Pedido:</strong> ${orderId}</p>
-                <p><strong>Fecha:</strong> ${new Date().toLocaleString(
-                  "es-AR"
-                )}</p>
-            </div>
-            
-            <div class="section total">
-                <h3>Resumen del Pedido</h3>
-                <p><strong>Total de Fotos:</strong> ${photos.length}</p>
-                <p><strong>Fotos Adjuntas:</strong> ${attachments.length}</p>
-                <p><em>Este pedido requiere atención inmediata</em></p>
-            </div>
-        </div>
-    </div>
-</body>
-</html>
-  `,
-      attachments: attachments,
-      // 🔥 MEJORAR HEADERS ANTI-SPAM
-      headers: {
-        "X-Priority": "3", // 🔥 Cambiar a 3 (Normal) en lugar de 1 (High)
-        "X-MSMail-Priority": "Normal",
-        Importance: "Normal",
-        "List-Unsubscribe": "<mailto:unsubscribe@magnetico-fotoimanes.com>",
-        Precedence: "bulk",
-        "Auto-Submitted": "auto-generated",
-        "X-Auto-Response-Suppress": "OOF, AutoReply",
-      },
-    };
-    console.log("🔄 Enviando email via Resend...");
-
-    const response = await axios.post(
-      "https://api.resend.com/emails",
-      emailData,
-      {
-        headers: {
-          Authorization: `Bearer ${RESEND_API_KEY}`,
-          "Content-Type": "application/json",
-        },
-        timeout: 30000,
-      }
-    );
-
-    console.log(`✅ Email enviado exitosamente. ID: ${response.data.id}`);
-    return {
-      success: true,
-      provider: "resend",
-      photosAttached: attachments.length,
-      messageId: response.data.id,
-    };
-  } catch (error) {
-    console.error("❌ Error con Resend:", {
-      message: error.message,
-      response: error.response?.data,
-      status: error.response?.status,
-    });
-    throw error;
-  }
+// Precio por defecto (fallback)
+const getUnitPrice = () => {
+  return 2500; // Precio fijo por emergencia
 };
 
-// ------------------------------
-// 💳 Mercado Pago Service - CORREGIDO COMPLETAMENTE
-// ------------------------------
-const createMercadoPagoPreference = async (
-  name,
-  email,
-  photoCount,
-  unitPrice,
-  totalPrice,
-  orderId,
-  tipo = "fotoimanes_unitario" // 🔥 VALOR POR DEFECTO AGREGADO
-) => {
+// Función simplificada de Mercado Pago
+const createMercadoPagoPreference = async (name, email, totalPrice, orderId) => {
   try {
     const mpToken = process.env.MP_ACCESS_TOKEN;
-
+    
     if (!mpToken) {
-      console.error("❌ MP_ACCESS_TOKEN no configurado");
-      throw new Error("Token de Mercado Pago no configurado");
+      throw new Error('MP_ACCESS_TOKEN no configurado');
     }
 
-    console.log(`💳 Creando preferencia MP para ${orderId} (${tipo})...`);
-
-    const frontendUrl = "https://magnetico-fotoimanes.com";
-    const backendUrl = "https://magnetico-server-1.onrender.com";
-
-    // 🔥 CONFIGURACIÓN SIMPLIFICADA Y CORRECTA
     const payload = {
       items: [
         {
-          title: `${photoCount} Fotoimanes Magnético`,
-          description: `Pedido de ${name} - ${photoCount} fotos personalizadas`,
+          title: `Fotoimanes Magnético - Pedido ${orderId}`,
+          description: `Pedido de ${name}`,
           quantity: 1,
           currency_id: "ARS",
-          unit_price: Math.round(totalPrice), // 🔥 REDONDEAR PRECIO
+          unit_price: Math.round(totalPrice),
         },
       ],
       payer: {
         email: email,
         name: name,
       },
-      // 🔥 CONFIGURACIÓN CRÍTICA - ELIMINAR REDIRECCIONES AUTOMÁTICAS
       back_urls: {
-        success: `${frontendUrl}/success`,
-        failure: `${frontendUrl}/error`, 
-        pending: `${frontendUrl}/pending`,
+        success: "https://magnetico-fotoimanes.com/success",
+        failure: "https://magnetico-fotoimanes.com/error", 
+        pending: "https://magnetico-fotoimanes.com/pending",
       },
-      // 🔥 DESHABILITAR AUTO_RETURN PARA EVITAR REDIRECCIONES
-      auto_return: "none", // 🔥 CAMBIAR de "approved" a "none"
+      auto_return: "none",
       external_reference: orderId,
-      notification_url: `${backendUrl}/api/webhook`,
-      // 🔥 CONFIGURACIÓN PARA BRICKS
+      notification_url: "https://magnetico-server-1.onrender.com/api/webhook",
       expires: false,
       binary_mode: true,
     };
 
-    console.log("📦 Payload MP:", JSON.stringify(payload, null, 2));
-
+    console.log("📦 Creando preferencia MP...");
+    
     const response = await axios.post(
       "https://api.mercadopago.com/checkout/preferences",
       payload,
@@ -236,236 +70,107 @@ const createMercadoPagoPreference = async (
       }
     );
 
-    if (!response.data.id) {
-      throw new Error("Mercado Pago no devolvió ID de preferencia");
-    }
-
-    console.log(`✅ Preferencia MP creada: ${response.data.id}`);
     return response.data;
-
   } catch (error) {
-    console.error("❌ Error con Mercado Pago:", error.message);
+    console.error("❌ Error MP:", error.message);
     throw error;
   }
 };
 
-// ------------------------------
-// 🔄 PROCESAMIENTO EN SEGUNDO PLANO
-// ------------------------------
-async function processEmailBackground({
-  name,
-  email,
-  phone,
-  address,
-  photos,
-  orderId,
-}) {
-  try {
-    console.log(`🔄 Procesando email en background para ${orderId}...`);
-
-    const emailResult = await sendVendorEmailWithAttachments({
-      name,
-      email,
-      phone,
-      address,
-      photos,
-      orderId,
-    });
-
-    console.log(
-      `✅ Email procesado: ${emailResult.photosAttached} fotos adjuntas`
-    );
-  } catch (error) {
-    console.error(`⚠️ Email falló para ${orderId}:`, error.message);
-    // No throw - el email es secundario
-  }
-}
-
-// ------------------------------
-// 🚀 ENDPOINT PRINCIPAL - COMPLETAMENTE CORREGIDO
-// ------------------------------
+// 🔥 ENDPOINT PRINCIPAL SIMPLIFICADO
 router.post("/", upload.array("photos"), async (req, res) => {
-  const orderId = `ORD-${Date.now().toString(36).toUpperCase()}`;
-
-  console.log(`\n🎯 NUEVO PEDIDO INICIADO: ${orderId}`);
-  console.log(`📋 Headers:`, req.headers);
-  console.log(`🌐 Origen: ${req.get("origin")}`);
+  const orderId = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
+  
+  console.log(`\n🎯 NUEVO PEDIDO: ${orderId}`);
+  console.log(`📸 Fotos: ${req.files?.length || 0}`);
+  console.log(`📋 Body keys:`, Object.keys(req.body));
 
   try {
-    // 🔥 CORRECCIÓN CRÍTICA: AGREGAR VALOR POR DEFECTO PARA 'tipo'
+    // 🔥 EXTRACCIÓN SEGURA DE DATOS
     const { 
-      name, 
-      email, 
-      phone, 
-      address, 
-      plan, 
-      cantidad, 
-      precio_total, 
-      tipo = "fotoimanes_unitario" // 🔥 VALOR POR DEFECTO AGREGADO
+      name = "", 
+      email = "", 
+      phone = "", 
+      address = "", 
+      plan = "", 
+      cantidad = "", 
+      precio_total = "", 
+      tipo = "fotoimanes_unitario" 
     } = req.body;
-    
+
     const photos = req.files || [];
     const photoCount = photos.length;
 
-    console.log(`✅ Datos recibidos:`, {
-      name: name?.substring(0, 20),
-      email: email?.substring(0, 20),
-      phone: phone ? "✓" : "✗",
-      address: address ? "✓" : "✗",
-      photos: photoCount,
-      plan: plan || "unitario",
-      cantidad: cantidad || "N/A",
-      tipo: tipo || "fotoimanes_unitario" // 🔥 LOG PARA VERIFICAR
-    });
-
-    // 🔥 VALIDACIONES MEJORADAS PARA PLANES
-    if (!name?.trim() || !email?.trim()) {
-      console.log("❌ Validación fallida: nombre o email vacíos");
+    // 🔥 VALIDACIONES BÁSICAS
+    if (!name.trim() || !email.trim()) {
       return res.status(400).json({
         success: false,
         error: "Nombre y email son obligatorios",
       });
     }
 
-    // Validar según tipo de pedido
-    if (tipo === "fotoimanes_plan" && plan && cantidad) {
-      // Validación para planes
-      if (photoCount !== parseInt(cantidad)) {
-        console.log(
-          `❌ Plan ${plan}: esperaba ${cantidad} fotos, recibió ${photoCount}`
-        );
-        return res.status(400).json({
-          success: false,
-          error: `El plan ${plan} incluye ${cantidad} fotoimanes. Subiste ${photoCount} fotos.`,
-        });
-      }
-    } else {
-      // Validación para sistema unitario
-      if (photoCount < 4) {
-        console.log("❌ Validación fallida: menos de 4 fotos");
-        return res.status(400).json({
-          success: false,
-          error: "Se requieren al menos 4 fotos",
-        });
-      }
+    if (photoCount < 4) {
+      return res.status(400).json({
+        success: false,
+        error: "Se requieren al menos 4 fotos",
+      });
     }
 
-    // Obtener precio según el tipo
-    let unitPrice, totalPrice;
-    try {
-      if (tipo === "fotoimanes_plan" && precio_total) {
-        // Usar precio del plan
-        totalPrice = parseFloat(precio_total);
-        unitPrice = totalPrice / photoCount; // Para cálculo interno
-        console.log(
-          `💰 Plan ${plan}: $${totalPrice} total ($${unitPrice} c/u)`
-        );
-      } else {
-        // Precio unitario normal
-        unitPrice = getUnitPrice();
-        totalPrice = unitPrice * photoCount;
-        console.log(
-          `💰 Sistema unitario: $${unitPrice} c/u = $${totalPrice} total`
-        );
-      }
-    } catch (priceError) {
-      console.error("❌ Error obteniendo precio:", priceError);
-      unitPrice = 2500; // Fallback
+    // 🔥 CÁLCULO DE PRECIO SIMPLIFICADO
+    let totalPrice;
+    if (tipo === "fotoimanes_plan" && precio_total) {
+      totalPrice = parseFloat(precio_total);
+    } else {
+      const unitPrice = getUnitPrice();
       totalPrice = unitPrice * photoCount;
     }
 
-    // 🔥 CORRECCIÓN: Llamada correcta a createMercadoPagoPreference
-    console.log(`💳 Creando preferencia MP...`);
+    console.log(`💰 Total: $${totalPrice}`);
+
+    // 🔥 CREAR PREFERENCIA MP
     const preference = await createMercadoPagoPreference(
       name.trim(),
       email.trim(),
-      photoCount,
-      unitPrice, // 🔥 precio unitario base
-      totalPrice, // 🔥 precio total
-      orderId,
-      tipo // 🔥 tipo de pedido
+      totalPrice,
+      orderId
     );
 
-    // Responder al cliente INMEDIATAMENTE
-    console.log(`⚡ Enviando respuesta al cliente...`);
+    // 🔥 RESPUESTA EXITOSA
     res.status(200).json({
       success: true,
-      message:
-        "✅ Pedido procesado correctamente. Redirigiendo a Mercado Pago...",
+      message: "✅ Pedido procesado correctamente",
       orderId: orderId,
       payment: {
-        init_point: preference.init_point,
         preference_id: preference.id,
+        init_point: preference.init_point,
         total: totalPrice,
-        unit_price: unitPrice,
       },
       photosProcessed: photoCount,
-      plan: plan || null,
-      tipo: tipo, // 🔥 INCLUIR TIPO EN RESPUESTA
-      timestamp: new Date().toISOString(),
     });
 
-    console.log(`🎉 Pedido ${orderId} procesado exitosamente`);
+    console.log(`🎉 Pedido ${orderId} completado`);
 
-    // Email en segundo plano (NO bloquear la respuesta)
-    setTimeout(async () => {
-      try {
-        await processEmailBackground({
-          name: name.trim(),
-          email: email.trim(),
-          phone: phone?.trim() || "",
-          address: address?.trim() || "",
-          photos,
-          orderId,
-        });
-      } catch (emailError) {
-        console.error(`❌ Error crítico en email background:`, emailError);
-      }
-    }, 500);
   } catch (error) {
-    console.error(`💥 ERROR CRÍTICO en ${orderId}:`, {
-      message: error.message,
-      stack: error.stack,
-    });
-
-    // 🔥 MEJOR MANEJO DE ERRORES
-    let errorMessage = "Error interno del servidor";
-    let statusCode = 500;
-
-    if (error.message.includes("Mercado Pago")) {
-      errorMessage = error.message;
-    } else if (error.message.includes("validación")) {
-      errorMessage = error.message;
-      statusCode = 400;
-    }
-
-    res.status(statusCode).json({
+    console.error(`💥 ERROR en ${orderId}:`, error.message);
+    
+    // 🔥 RESPUESTA DE ERROR DETALLADA
+    res.status(500).json({
       success: false,
-      error: errorMessage,
+      error: `Error del servidor: ${error.message}`,
       orderId: orderId,
+      details: process.env.NODE_ENV === 'development' ? error.stack : undefined
     });
   }
 });
 
-// ------------------------------
-// 📊 ENDPOINTS ADICIONALES
-// ------------------------------
-router.get("/config/price", async (req, res) => {
-  try {
-    const unitPrice = getUnitPrice();
-    res.json({
-      success: true,
-      price: unitPrice,
-      unit_price: unitPrice,
-      currency: "ARS",
-    });
-  } catch (error) {
-    console.error("❌ Error en /config/price:", error);
-    res.status(500).json({
-      success: false,
-      error: "Error al obtener el precio",
-    });
-  }
+// Endpoints adicionales
+router.get("/config/price", (req, res) => {
+  res.json({
+    success: true,
+    price: getUnitPrice(),
+    unit_price: getUnitPrice(),
+    currency: "ARS",
+  });
 });
 
 router.get("/health", (req, res) => {
@@ -473,7 +178,6 @@ router.get("/health", (req, res) => {
     status: "ok",
     service: "order-api",
     timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || "development",
   });
 });
 
