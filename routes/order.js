@@ -1,14 +1,15 @@
 // -------------------------
-// routes/order.js - VERSIÓN CORREGIDA
+// routes/order.js - VERSIÓN COMPLETA CORREGIDA
 // -------------------------
 import express from "express";
 import multer from "multer";
 import axios from "axios";
 import cors from "cors";
+import nodemailer from "nodemailer";
 
 const router = express.Router();
 
-// 🔥 CONFIGURAR CORS ESPECÍFICO PARA ESTA RUTA
+// 🔥 CONFIGURAR CORS
 router.use(cors({
   origin: ['https://magnetico-fotoimanes.com', 'https://www.magnetico-fotoimanes.com'],
   credentials: true
@@ -18,63 +19,123 @@ router.use(cors({
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 3 * 1024 * 1024, // 3MB
+    fileSize: 3 * 1024 * 1024,
     files: 20,
-  },
-  fileFilter: (req, file, cb) => {
-    if (file.mimetype.startsWith('image/')) {
-      cb(null, true);
-    } else {
-      cb(new Error('Solo se permiten archivos de imagen'), false);
-    }
   }
 });
 
-// Manejo de errores de multer
-const handleMulterError = (error, req, res, next) => {
-  if (error instanceof multer.MulterError) {
-    if (error.code === 'LIMIT_FILE_SIZE') {
-      return res.status(413).json({
-        success: false,
-        error: 'La imagen es demasiado grande. Máximo 3MB por imagen.'
-      });
-    }
-    if (error.code === 'LIMIT_FILE_COUNT') {
-      return res.status(400).json({
-        success: false,
-        error: 'Máximo 20 imágenes permitidas.'
-      });
-    }
-  }
-  next(error);
+// 🔥 PRECIO CONSISTENTE - MISMO QUE FRONTEND
+const getUnitPrice = () => {
+  return 2500; // EXACTAMENTE EL MISMO PRECIO QUE EN FRONTEND
 };
 
-// Precio por defecto
-const getUnitPrice = () => 2500;
+// 🔥 CONFIGURACIÓN DE EMAIL
+const createEmailTransporter = () => {
+  return nodemailer.createTransporter({
+    service: 'gmail',
+    auth: {
+      user: process.env.EMAIL_USER,
+      pass: process.env.EMAIL_PASS
+    }
+  });
+};
 
-// Función Mercado Pago mejorada
-const createMercadoPagoPreference = async (name, email, totalPrice, orderId, photoCount, plan = null) => {
+// 🔥 FUNCIÓN PARA ENVIAR EMAIL DE PEDIDO
+const sendOrderEmail = async (orderData, photos) => {
+  try {
+    const transporter = createEmailTransporter();
+    
+    const emailHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; color: #333; }
+            .header { background: #BCA88F; color: white; padding: 20px; text-align: center; }
+            .content { padding: 20px; }
+            .order-details { background: #f9f9f9; padding: 15px; border-radius: 8px; margin: 15px 0; }
+            .total { font-size: 1.2em; font-weight: bold; color: #2E7D32; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>🎉 Nuevo Pedido Magnético</h1>
+            <p>Orden: ${orderData.orderId}</p>
+          </div>
+          <div class="content">
+            <h2>📋 Información del Cliente</h2>
+            <p><strong>Nombre:</strong> ${orderData.name}</p>
+            <p><strong>Email:</strong> ${orderData.email}</p>
+            <p><strong>Teléfono:</strong> ${orderData.phone || 'No proporcionado'}</p>
+            <p><strong>Dirección:</strong> ${orderData.address || 'No proporcionada'}</p>
+            
+            <div class="order-details">
+              <h2>📦 Detalles del Pedido</h2>
+              <p><strong>Plan:</strong> ${orderData.plan || 'Unitario'}</p>
+              <p><strong>Cantidad de fotos:</strong> ${orderData.photoCount}</p>
+              <p><strong>Precio unitario:</strong> $${orderData.unitPrice}</p>
+              <p class="total">Total: $${orderData.totalPrice}</p>
+            </div>
+            
+            <p><strong>ID de Pago MP:</strong> ${orderData.mpPreferenceId}</p>
+            <p><strong>Fecha:</strong> ${new Date().toLocaleString('es-AR')}</p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const mailOptions = {
+      from: process.env.EMAIL_USER,
+      to: process.env.ORDER_NOTIFICATION_EMAIL || 'tu-email@gmail.com',
+      subject: `📦 Nuevo Pedido - ${orderData.orderId}`,
+      html: emailHtml,
+      attachments: photos.map((photo, index) => ({
+        filename: `foto_${index + 1}.jpg`,
+        content: photo.buffer,
+        contentType: 'image/jpeg'
+      }))
+    };
+
+    await transporter.sendMail(mailOptions);
+    console.log(`✅ Email enviado para orden ${orderData.orderId}`);
+    
+  } catch (error) {
+    console.error('❌ Error enviando email:', error);
+    // No lanzamos error para no interrumpir el flujo de pago
+  }
+};
+
+// 🔥 FUNCIÓN MERCADO PAGO MEJORADA
+const createMercadoPagoPreference = async (orderData) => {
   try {
     const mpToken = process.env.MP_ACCESS_TOKEN;
     
     if (!mpToken) {
-      console.error('❌ MP_ACCESS_TOKEN no configurado');
-      throw new Error('Error de configuración del servicio de pago');
+      throw new Error('MP_ACCESS_TOKEN no configurado');
     }
 
-    let title = `Fotoimanes Magnético - ${photoCount} foto${photoCount > 1 ? 's' : ''}`;
+    const { name, email, totalPrice, orderId, photoCount, plan, unitPrice } = orderData;
+
+    // 🔥 TÍTULO CLARO Y PRECISO
+    let title = `${photoCount} Fotoimanes Magnético`;
+    let description = `Pedido ${orderId}`;
+    
     if (plan) {
-      title = `Plan ${plan} - ${photoCount} Fotoimanes Magnético`;
+      title = `Plan ${plan} - ${photoCount} Fotoimanes`;
+      description = `Plan ${plan} - ${photoCount} unidades`;
     }
+
+    // 🔥 VERIFICAR QUE EL PRECIO SEA CORRECTO
+    console.log(`💰 Verificación precio MP: $${totalPrice} (${photoCount} × $${unitPrice})`);
 
     const payload = {
       items: [
         {
           title: title,
-          description: `Pedido ${orderId} de ${name}`,
+          description: description,
           quantity: 1,
           currency_id: "ARS",
-          unit_price: Math.round(totalPrice),
+          unit_price: Math.round(totalPrice), // 🔥 PRECIO EXACTO
         },
       ],
       payer: {
@@ -82,9 +143,9 @@ const createMercadoPagoPreference = async (name, email, totalPrice, orderId, pho
         name: name.trim(),
       },
       back_urls: {
-        success: "https://magnetico-fotoimanes.com/success",
-        failure: "https://magnetico-fotoimanes.com/error",
-        pending: "https://magnetico-fotoimanes.com/pending",
+        success: `https://magnetico-fotoimanes.com/?order=${orderId}&status=success`,
+        failure: `https://magnetico-fotoimanes.com/?order=${orderId}&status=error`,
+        pending: `https://magnetico-fotoimanes.com/?order=${orderId}&status=pending`,
       },
       auto_return: "approved",
       external_reference: orderId,
@@ -93,7 +154,7 @@ const createMercadoPagoPreference = async (name, email, totalPrice, orderId, pho
       binary_mode: true,
     };
 
-    console.log("📦 Creando preferencia MP...");
+    console.log("📦 Creando preferencia MP con payload:", JSON.stringify(payload, null, 2));
     
     const response = await axios.post(
       "https://api.mercadopago.com/checkout/preferences",
@@ -116,26 +177,16 @@ const createMercadoPagoPreference = async (name, email, totalPrice, orderId, pho
   }
 };
 
-// 🔥 ENDPOINT PRINCIPAL MEJORADO
-router.post("/", upload.array("photos"), handleMulterError, async (req, res) => {
-  // 🔥 HEADERS CORS EXPLÍCITOS
+// 🔥 ENDPOINT PRINCIPAL COMPLETO
+router.post("/", upload.array("photos"), async (req, res) => {
   res.header('Access-Control-Allow-Origin', 'https://magnetico-fotoimanes.com');
-  res.header('Access-Control-Allow-Methods', 'POST');
-  res.header('Access-Control-Allow-Headers', 'Content-Type');
   
   const orderId = `ORD-${Date.now()}-${Math.random().toString(36).substr(2, 9)}`;
   
   console.log(`\n🎯 NUEVO PEDIDO: ${orderId}`);
   console.log(`📸 Fotos recibidas: ${req.files?.length || 0}`);
-  console.log(`📋 Datos:`, {
-    name: req.body.name?.substring(0, 20) + '...',
-    email: req.body.email,
-    plan: req.body.plan || 'unitario',
-    photoCount: req.files?.length || 0
-  });
 
   try {
-    // Validar que hay archivos
     if (!req.files || req.files.length === 0) {
       return res.status(400).json({
         success: false,
@@ -157,7 +208,7 @@ router.post("/", upload.array("photos"), handleMulterError, async (req, res) => 
     const photos = req.files;
     const photoCount = photos.length;
 
-    // 🔥 VALIDACIONES MEJORADAS
+    // 🔥 VALIDACIONES
     if (!name?.trim()) {
       return res.status(400).json({
         success: false,
@@ -179,41 +230,51 @@ router.post("/", upload.array("photos"), handleMulterError, async (req, res) => 
       });
     }
 
-    if (photoCount > 20) {
-      return res.status(400).json({
-        success: false,
-        error: `Máximo 20 fotos permitidas. Recibiste ${photoCount}`,
-      });
-    }
-
-    // 🔥 CÁLCULO DE PRECIO
+    // 🔥 CÁLCULO DE PRECIO CONSISTENTE
+    const unitPrice = getUnitPrice();
     let totalPrice;
+    
     if (tipo === "fotoimanes_plan" && precio_total) {
       totalPrice = parseFloat(precio_total);
+      console.log(`💰 Usando precio de plan: $${totalPrice}`);
     } else {
-      const unitPrice = getUnitPrice();
       totalPrice = unitPrice * photoCount;
+      console.log(`💰 Calculando precio unitario: ${photoCount} × $${unitPrice} = $${totalPrice}`);
     }
 
-    // Validar precio
+    // 🔥 VERIFICACIÓN CRÍTICA DEL PRECIO
     if (isNaN(totalPrice) || totalPrice <= 0) {
+      console.error('❌ Precio inválido calculado:', totalPrice);
       return res.status(400).json({
         success: false,
-        error: "El precio calculado no es válido",
+        error: "Error en el cálculo del precio",
       });
     }
 
-    console.log(`💰 Precio calculado: $${totalPrice}`);
+    // 🔥 DATOS PARA MERCADO PAGO
+    const orderData = {
+      name: name.trim(),
+      email: email.trim(),
+      phone: phone.trim(),
+      address: address.trim(),
+      plan: plan,
+      photoCount: photoCount,
+      unitPrice: unitPrice,
+      totalPrice: totalPrice,
+      orderId: orderId,
+      tipo: tipo
+    };
 
     // 🔥 CREAR PREFERENCIA MP
-    const preference = await createMercadoPagoPreference(
-      name,
-      email,
-      totalPrice,
-      orderId,
-      photoCount,
-      plan
-    );
+    const preference = await createMercadoPagoPreference(orderData);
+
+    // 🔥 ENVIAR EMAIL EN SEGUNDO PLANO (no bloquea la respuesta)
+    sendOrderEmail({
+      ...orderData,
+      mpPreferenceId: preference.id
+    }, photos).catch(emailError => {
+      console.error('❌ Error no crítico en email:', emailError);
+    });
 
     // 🔥 RESPUESTA EXITOSA
     const responseData = {
@@ -224,38 +285,74 @@ router.post("/", upload.array("photos"), handleMulterError, async (req, res) => 
         preference_id: preference.id,
         init_point: preference.init_point,
         sandbox_init_point: preference.sandbox_init_point,
-        total: totalPrice,
+        total: totalPrice, // 🔥 MISMO PRECIO QUE SE MUESTRA AL USUARIO
+        currency: "ARS",
+        items: [
+          {
+            title: `${photoCount} Fotoimanes Magnético`,
+            quantity: 1,
+            unit_price: totalPrice,
+            total: totalPrice
+          }
+        ]
       },
       details: {
         photosProcessed: photoCount,
         plan: plan || 'unitario',
-        customer: name.substring(0, 3) + '...'
+        unitPrice: unitPrice,
+        totalPrice: totalPrice
       }
     };
 
-    console.log(`🎉 Pedido ${orderId} completado exitosamente`);
+    console.log(`🎉 Pedido ${orderId} completado - Total: $${totalPrice}`);
     res.status(200).json(responseData);
 
   } catch (error) {
     console.error(`💥 ERROR en ${orderId}:`, error.message);
     
-    // 🔥 RESPUESTA DE ERROR MEJORADA
-    const errorResponse = {
+    res.status(500).json({
       success: false,
       error: error.message || "Error interno del servidor",
-      orderId: orderId,
-      timestamp: new Date().toISOString()
-    };
+      orderId: orderId
+    });
+  }
+});
 
-    // Agregar detalles de debug solo en desarrollo
-    if (process.env.NODE_ENV === 'development') {
-      errorResponse.debug = {
-        stack: error.stack,
-        photosReceived: req.files?.length || 0
-      };
+// 🔥 WEBHOOK PARA PROCESAR PAGOS EXITOSOS
+router.post("/webhook", async (req, res) => {
+  console.log('🔔 Webhook MP recibido:', req.body);
+  
+  try {
+    const { type, data } = req.body;
+    
+    if (type === "payment") {
+      const paymentId = data.id;
+      
+      // Obtener detalles del pago de MP
+      const response = await axios.get(
+        `https://api.mercadopago.com/v1/payments/${paymentId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`
+          }
+        }
+      );
+      
+      const payment = response.data;
+      const orderId = payment.external_reference;
+      
+      if (payment.status === 'approved') {
+        console.log(`✅ Pago aprobado para orden: ${orderId}`);
+        
+        // Aquí podrías enviar otro email de confirmación de pago
+        // o actualizar el estado de la orden en una base de datos
+      }
     }
-
-    res.status(500).json(errorResponse);
+    
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('❌ Error en webhook:', error);
+    res.status(200).send('OK'); // Siempre responder OK a MP
   }
 });
 
@@ -266,29 +363,9 @@ router.get("/config/price", (req, res) => {
   res.json({
     success: true,
     price: getUnitPrice(),
-    unit_price: getUnitPrice(),
+    unit_price: getUnitPrice(), // 🔥 MISMO PRECIO
     currency: "ARS",
     timestamp: new Date().toISOString()
-  });
-});
-
-router.get("/health", (req, res) => {
-  res.header('Access-Control-Allow-Origin', 'https://magnetico-fotoimanes.com');
-  
-  res.json({
-    status: "ok",
-    service: "order-api",
-    timestamp: new Date().toISOString(),
-    environment: process.env.NODE_ENV || 'development'
-  });
-});
-
-// Manejo global de errores
-router.use((error, req, res, next) => {
-  console.error('💥 Error global:', error);
-  res.status(500).json({
-    success: false,
-    error: 'Error interno del servidor'
   });
 });
 
