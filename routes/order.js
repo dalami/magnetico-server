@@ -1,13 +1,11 @@
 // -------------------------
-// routes/order.js - VERSIÓN CON FOTOS ADJUNTAS
+// routes/order.js - VERSIÓN CON RESEND Y FOTOS ADJUNTAS
 // -------------------------
 import express from "express";
 import multer from "multer";
 import axios from "axios";
 import cors from "cors";
 import { Resend } from 'resend';
-import { writeFileSync, mkdirSync, existsSync } from 'fs';
-import { join } from 'path';
 
 const router = express.Router();
 
@@ -17,17 +15,11 @@ router.use(cors({
   credentials: true
 }));
 
-// 🔥 CONFIGURAR CARPETA PARA FOTOS TEMPORALES
-const uploadsDir = join(process.cwd(), 'temp_uploads');
-if (!existsSync(uploadsDir)) {
-  mkdirSync(uploadsDir, { recursive: true });
-}
-
 // Configuración de multer
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
-    fileSize: 3 * 1024 * 1024,
+    fileSize: 5 * 1024 * 1024, // 5MB
     files: 20,
   }
 });
@@ -48,64 +40,25 @@ try {
   console.error('❌ Error configurando Resend:', error.message);
 }
 
-// 🔥 GUARDAR FOTOS TEMPORALMENTE Y CREAR ENLACES
-const savePhotosTemporarily = async (photos, orderId) => {
-  try {
-    const photoLinks = [];
-    const orderDir = join(uploadsDir, orderId);
-    
-    if (!existsSync(orderDir)) {
-      mkdirSync(orderDir, { recursive: true });
-    }
-
-    for (let i = 0; i < photos.length; i++) {
-      const photo = photos[i];
-      const fileName = `foto_${i + 1}.jpg`;
-      const filePath = join(orderDir, fileName);
-      
-      // Guardar archivo temporalmente
-      writeFileSync(filePath, photo.buffer);
-      
-      // En un sistema real, aquí subirías a Cloudinary, AWS S3, etc.
-      // Por ahora solo simulamos el enlace
-      photoLinks.push({
-        name: fileName,
-        number: i + 1,
-        // En producción, esto sería una URL real a tu CDN
-        simulatedUrl: `https://tuservidor.com/uploads/${orderId}/${fileName}`
-      });
-    }
-
-    console.log(`📸 ${photoLinks.length} fotos guardadas temporalmente para orden ${orderId}`);
-    return photoLinks;
-    
-  } catch (error) {
-    console.error('❌ Error guardando fotos:', error.message);
-    return [];
-  }
-};
-
-// 🔥 1. EMAIL DE PEDIDO RECIBIDO CON INFO DE FOTOS
-const sendOrderReceivedEmail = async (orderData, photoLinks) => {
+// 🔥 1. EMAIL DE PEDIDO RECIBIDO CON FOTOS ADJUNTAS
+const sendOrderReceivedEmail = async (orderData, photos) => {
   try {
     if (!resend) {
       console.log('📧 Resend no configurado - Simulando envío de email');
-      console.log('📋 Datos del pedido con fotos:', {
-        orderId: orderData.orderId,
-        name: orderData.name,
-        photos: orderData.photoCount,
-        total: orderData.totalPrice,
-        photoFiles: photoLinks.map(p => p.name)
-      });
+      console.log('📋 Datos del pedido:', orderData);
       return true;
     }
 
-    console.log('📧 Enviando email de pedido recibido con info de fotos...');
+    console.log('📧 Enviando email con fotos adjuntas...');
     
-    // 🔥 CREAR LISTA DE FOTOS PARA EL EMAIL
-    const photosListHtml = photoLinks.map(photo => 
-      `<li><strong>Foto ${photo.number}:</strong> ${photo.name} (${Math.round(photo.size / 1024)} KB)</li>`
-    ).join('');
+    // 🔥 PREPARAR ATTACHMENTS
+    const attachments = photos.map((photo, index) => ({
+      filename: `foto_${index + 1}.jpg`,
+      content: photo.buffer.toString('base64'), // 🔥 CONVERTIR A BASE64
+      contentType: 'image/jpeg'
+    }));
+
+    console.log(`📎 Preparando ${attachments.length} archivos adjuntos`);
 
     const emailHtml = `
       <!DOCTYPE html>
@@ -116,10 +69,10 @@ const sendOrderReceivedEmail = async (orderData, photoLinks) => {
             .header { background: #BCA88F; color: white; padding: 20px; text-align: center; }
             .content { padding: 20px; }
             .order-details { background: #f9f9f9; padding: 15px; border-radius: 8px; margin: 15px 0; }
-            .photos-details { background: #fff3cd; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #ffc107; }
+            .photos-details { background: #e8f5e8; padding: 15px; border-radius: 8px; margin: 15px 0; border-left: 4px solid #4CAF50; }
             .total { font-size: 1.2em; font-weight: bold; color: #2E7D32; }
             .status { color: #BCA88F; font-weight: bold; }
-            .photo-list { background: white; padding: 10px; border-radius: 5px; margin: 10px 0; }
+            .photo-item { margin: 5px 0; padding: 5px; background: white; border-radius: 3px; }
           </style>
         </head>
         <body>
@@ -145,14 +98,16 @@ const sendOrderReceivedEmail = async (orderData, photoLinks) => {
             </div>
 
             <div class="photos-details">
-              <h2>🖼️ Fotos Recibidas (${photoLinks.length})</h2>
-              <p><strong>Las fotos han sido recibidas correctamente y están listas para procesar.</strong></p>
-              <div class="photo-list">
-                <ul>
-                  ${photosListHtml}
-                </ul>
+              <h2>🖼️ Fotos Adjuntas (${photos.length})</h2>
+              <p><strong>✅ Las fotos están adjuntas a este email y listas para descargar.</strong></p>
+              <div style="background: white; padding: 10px; border-radius: 5px; margin: 10px 0;">
+                ${photos.map((photo, index) => 
+                  `<div class="photo-item">
+                    <strong>Foto ${index + 1}:</strong> ${photo.originalname} (${Math.round(photo.size / 1024)} KB)
+                   </div>`
+                ).join('')}
               </div>
-              <p><em>💡 Las fotos están almacenadas en el sistema y listas para producción.</em></p>
+              <p><em>💡 Todas las fotos están comprimidas y listas para producción.</em></p>
             </div>
             
             <p><strong>ID de Pago MP:</strong> ${orderData.mpPreferenceId}</p>
@@ -168,22 +123,23 @@ const sendOrderReceivedEmail = async (orderData, photoLinks) => {
       to: 'pedidos@magnetico-fotoimanes.com',
       subject: `📦 Pedido ${orderData.orderId} - ${orderData.photoCount} Fotos - $${orderData.totalPrice}`,
       html: emailHtml,
+      attachments: attachments // 🔥 FOTOS ADJUNTAS
     });
 
     if (error) {
       throw new Error(`Resend error: ${error.message}`);
     }
 
-    console.log(`✅ Email con info de ${photoLinks.length} fotos enviado a pedidos@magnetico...`);
+    console.log(`✅ Email con ${attachments.length} fotos adjuntas enviado correctamente`);
     return true;
     
   } catch (error) {
-    console.error('❌ Error enviando email de pedido:', error.message);
+    console.error('❌ Error enviando email con adjuntos:', error.message);
     return false;
   }
 };
 
-// 🔥 2. EMAIL DE CONFIRMACIÓN AL CLIENTE
+// 🔥 2. EMAIL DE CONFIRMACIÓN AL CLIENTE (SIN ADJUNTOS)
 const sendCustomerConfirmationEmail = async (orderData) => {
   try {
     if (!resend) {
@@ -324,7 +280,7 @@ const createMercadoPagoPreference = async (orderData) => {
   }
 };
 
-// 🔥 ENDPOINT PRINCIPAL MEJORADO
+// 🔥 ENDPOINT PRINCIPAL
 router.post("/", upload.array("photos"), async (req, res) => {
   res.header('Access-Control-Allow-Origin', 'https://magnetico-fotoimanes.com');
   
@@ -365,9 +321,6 @@ router.post("/", upload.array("photos"), async (req, res) => {
       return res.status(400).json({ success: false, error: "Error en el cálculo del precio" });
     }
 
-    // 🔥 GUARDAR FOTOS TEMPORALMENTE
-    const photoLinks = await savePhotosTemporarily(photos, orderId);
-
     // Datos para emails y MP
     const orderData = {
       name: name.trim(),
@@ -387,8 +340,8 @@ router.post("/", upload.array("photos"), async (req, res) => {
     orderData.mpPreferenceId = preference.id;
     orderData.paymentLink = preference.init_point;
 
-    // 🔥 ENVIAR EMAILS CON INFO DE FOTOS
-    sendOrderReceivedEmail(orderData, photoLinks).catch(e => console.error('Error email pedido:', e.message));
+    // 🔥 ENVIAR EMAILS CON FOTOS ADJUNTAS
+    sendOrderReceivedEmail(orderData, photos).catch(e => console.error('Error email pedido:', e.message));
     sendCustomerConfirmationEmail(orderData).catch(e => console.error('Error email cliente:', e.message));
 
     // Respuesta exitosa
@@ -404,11 +357,11 @@ router.post("/", upload.array("photos"), async (req, res) => {
       details: {
         photosProcessed: photoCount,
         totalPrice: totalPrice,
-        photosReceived: photoLinks.length
+        photosAttached: photos.length
       }
     });
 
-    console.log(`🎉 Pedido ${orderId} completado - ${photoLinks.length} fotos recibidas`);
+    console.log(`🎉 Pedido ${orderId} completado - ${photos.length} fotos adjuntas`);
 
   } catch (error) {
     console.error(`💥 ERROR en ${orderId}:`, error.message);
