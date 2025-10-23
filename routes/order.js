@@ -315,16 +315,29 @@ const createMercadoPagoPreference = async (orderData) => {
       throw new Error('MP_ACCESS_TOKEN no configurado');
     }
 
-    const { name, email, totalPrice, orderId, photoCount, plan } = orderData;
+    const { name, email, totalPrice, orderId, photoCount, plan, unitPrice } = orderData;
+
+    // 🔥 TÍTULO MÁS CLARO Y PRECISO PARA MP
+    let title, description;
+    
+    if (plan) {
+      title = `Plan ${plan} - ${photoCount} Fotoimanes`;
+      description = `Fotoimanes personalizados - ${photoCount} unidades`;
+    } else {
+      title = `${photoCount} Fotoimanes Personalizados`;
+      description = `Fotoimanes magnéticos - ${photoCount} unidades`;
+    }
+
+    console.log(`💰 Creando preferencia MP: $${totalPrice} por ${photoCount} fotoimanes`);
 
     const payload = {
       items: [
         {
-          title: `Fotoimanes Magnético - ${photoCount} unidades`,
-          description: `Pedido ${orderId}`,
+          title: title, // 🔥 TÍTULO CLARO
+          description: description, // 🔥 DESCRIPCIÓN ESPECÍFICA
           quantity: 1,
           currency_id: "ARS",
-          unit_price: Math.round(totalPrice),
+          unit_price: Math.round(totalPrice), // 🔥 PRECIO EXACTO
         },
       ],
       payer: {
@@ -341,6 +354,13 @@ const createMercadoPagoPreference = async (orderData) => {
       notification_url: "https://magnetico-server-1.onrender.com/api/webhook",
       expires: false,
       binary_mode: true,
+      // 🔥 CONFIGURACIÓN ADICIONAL PARA MEJORAR LA VISUALIZACIÓN
+      statement_descriptor: "MAGNETICO FOTOIMANES",
+      metadata: {
+        product: "fotoimanes",
+        quantity: photoCount,
+        unit_price: unitPrice
+      }
     };
 
     const response = await axios.post(
@@ -355,6 +375,7 @@ const createMercadoPagoPreference = async (orderData) => {
       }
     );
 
+    console.log("✅ Preferencia MP creada con precio:", totalPrice);
     return response.data;
 
   } catch (error) {
