@@ -454,21 +454,28 @@ const createMercadoPagoPreference = async (orderData) => {
 };
 
 // 🔥 WEBHOOK PARA PAGOS APROBADOS
+// 🔥 WEBHOOK CON LOGS DETALLADOS
 router.post("/webhook", express.json(), async (req, res) => {
-  console.log('🔔 Webhook MP recibido:', {
-    body: req.body,
-    query: req.query
-  });
+  console.log('🔔🔔🔔 WEBHOOK LLAMADO - INICIO 🔔🔔🔔');
+  console.log('📋 HEADERS:', req.headers);
+  console.log('📦 BODY COMPLETO:', JSON.stringify(req.body, null, 2));
+  console.log('🔔🔔🔔 WEBHOOK LLAMADO - FIN 🔔🔔🔔');
   
   try {
     const { type, data } = req.body;
     
+    if (!type) {
+      console.log('❌ Webhook sin tipo - posible llamada de prueba');
+      return res.status(200).send('OK');
+    }
+    
+    console.log(`🎯 Tipo de webhook: ${type}`);
+    
     if (type === "payment") {
       const paymentId = data.id;
-      
       console.log(`💰 Procesando pago: ${paymentId}`);
       
-      // Obtener detalles del pago de MP
+      // Obtener detalles del pago
       const response = await axios.get(
         `https://api.mercadopago.com/v1/payments/${paymentId}`,
         {
@@ -481,17 +488,12 @@ router.post("/webhook", express.json(), async (req, res) => {
       const payment = response.data;
       const orderId = payment.external_reference;
       
-      console.log(`📋 Detalles del pago ${paymentId}:`, {
-        status: payment.status,
-        orderId: orderId,
-        amount: payment.transaction_amount,
-        customer: payment.payer.email
-      });
+      console.log(`📋 Estado del pago ${paymentId}: ${payment.status}`);
+      console.log(`📦 Orden asociada: ${orderId}`);
       
       if (payment.status === 'approved') {
-        console.log(`✅ Pago APROBADO para orden: ${orderId}`);
+        console.log(`✅✅✅ PAGO APROBADO DETECTADO ✅✅✅`);
         
-        // 🔥 ENVIAR EMAILS DE PAGO APROBADO
         const paymentData = {
           orderId: orderId,
           paymentId: paymentId,
@@ -504,28 +506,29 @@ router.post("/webhook", express.json(), async (req, res) => {
           customerAddress: `${payment.payer.address?.street_name || ''} ${payment.payer.address?.street_number || ''}`.trim() || 'No proporcionada'
         };
 
-        console.log('📧 Enviando emails de confirmación de pago...');
+        console.log('📧📧📧 INICIANDO ENVÍO DE EMAILS 📧📧📧');
         
-        // Email para vos (pedidos@magnetico...)
-        await sendPaymentApprovedEmail(paymentData).catch(e => 
-          console.error('❌ Error email pago aprobado:', e.message)
-        );
+        // Email para vos
+        const result1 = await sendPaymentApprovedEmail(paymentData);
+        console.log(`📧 Email a pedidos@: ${result1 ? '✅' : '❌'}`);
         
         // Email para el cliente
-        await sendCustomerPaymentConfirmation(paymentData).catch(e => 
-          console.error('❌ Error email confirmación cliente:', e.message)
-        );
+        const result2 = await sendCustomerPaymentConfirmation(paymentData);
+        console.log(`📧 Email al cliente: ${result2 ? '✅' : '❌'}`);
         
-        console.log(`🎉 Emails de confirmación enviados para orden ${orderId}`);
+        console.log(`🎉🎉🎉 PROCESO COMPLETADO - Emails enviados 🎉🎉🎉`);
         
       } else {
         console.log(`ℹ️ Pago ${paymentId} con estado: ${payment.status}`);
       }
+    } else {
+      console.log(`📨 Webhook de tipo no manejado: ${type}`);
     }
     
     res.status(200).send('OK');
   } catch (error) {
-    console.error('❌ Error en webhook:', error.message);
+    console.error('💥💥💥 ERROR CRÍTICO EN WEBHOOK:', error.message);
+    console.error('Stack:', error.stack);
     res.status(200).send('OK');
   }
 });
