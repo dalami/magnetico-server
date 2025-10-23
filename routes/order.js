@@ -1,5 +1,5 @@
 // -------------------------
-// routes/order.js - VERSIÓN CON RESEND Y FOTOS ADJUNTAS
+// routes/order.js - VERSIÓN COMPLETA FUNCIONAL
 // -------------------------
 import express from "express";
 import multer from "multer";
@@ -54,7 +54,7 @@ const sendOrderReceivedEmail = async (orderData, photos) => {
     // 🔥 PREPARAR ATTACHMENTS
     const attachments = photos.map((photo, index) => ({
       filename: `foto_${index + 1}.jpg`,
-      content: photo.buffer.toString('base64'), // 🔥 CONVERTIR A BASE64
+      content: photo.buffer.toString('base64'),
       contentType: 'image/jpeg'
     }));
 
@@ -123,7 +123,7 @@ const sendOrderReceivedEmail = async (orderData, photos) => {
       to: 'pedidos@magnetico-fotoimanes.com',
       subject: `📦 Pedido ${orderData.orderId} - ${orderData.photoCount} Fotos - $${orderData.totalPrice}`,
       html: emailHtml,
-      attachments: attachments // 🔥 FOTOS ADJUNTAS
+      attachments: attachments
     });
 
     if (error) {
@@ -221,6 +221,179 @@ const sendCustomerConfirmationEmail = async (orderData) => {
   }
 };
 
+// 🔥 3. EMAIL DE PAGO APROBADO (para vos)
+const sendPaymentApprovedEmail = async (paymentData) => {
+  try {
+    if (!resend) {
+      console.log('📧 Resend no configurado - Simulando email de pago aprobado');
+      console.log('💰 Pago aprobado:', paymentData);
+      return true;
+    }
+
+    console.log('📧 Enviando email de pago aprobado...');
+    
+    const emailHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; color: #333; }
+            .header { background: #4CAF50; color: white; padding: 20px; text-align: center; }
+            .content { padding: 20px; }
+            .order-details { background: #f9f9f9; padding: 15px; border-radius: 8px; margin: 15px 0; }
+            .status { color: #4CAF50; font-weight: bold; font-size: 1.2em; }
+            .celebrate { background: #e8f5e8; padding: 15px; border-radius: 8px; margin: 15px 0; text-align: center; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>✅ PAGO APROBADO</h1>
+            <p>Orden: ${paymentData.orderId}</p>
+          </div>
+          <div class="content">
+            <div class="celebrate">
+              <h2>🎉 ¡PAGO CONFIRMADO!</h2>
+              <p style="font-size: 1.1em; margin: 10px 0;">El pedido está listo para procesar y enviar</p>
+            </div>
+            
+            <div class="status">🟢 PAGO CONFIRMADO - PROCESAR PEDIDO</div>
+            
+            <h2>👤 Información del Cliente</h2>
+            <p><strong>Nombre:</strong> ${paymentData.customerName}</p>
+            <p><strong>Email:</strong> ${paymentData.customerEmail}</p>
+            <p><strong>Teléfono:</strong> ${paymentData.customerPhone}</p>
+            <p><strong>Dirección:</strong> ${paymentData.customerAddress}</p>
+            
+            <div class="order-details">
+              <h2>💰 Información de Pago</h2>
+              <p><strong>ID de Pago MP:</strong> ${paymentData.paymentId}</p>
+              <p><strong>Monto:</strong> $${paymentData.amount}</p>
+              <p><strong>Fecha de pago:</strong> ${new Date(paymentData.date).toLocaleString('es-AR')}</p>
+              <p><strong>Método:</strong> ${paymentData.paymentMethod || 'No especificado'}</p>
+            </div>
+
+            <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin: 15px 0;">
+              <h3>📦 Acción Requerida</h3>
+              <p><strong>Procesar el pedido y preparar envío.</strong></p>
+              <p>Orden: <strong>${paymentData.orderId}</strong></p>
+            </div>
+
+            <p style="text-align: center; margin-top: 25px; color: #666;">
+              <em>Este es un email automático de confirmación de pago.</em>
+            </p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const { data, error } = await resend.emails.send({
+      from: 'Magnético Fotoimanes <pedidos@magnetico-fotoimanes.com>',
+      to: 'pedidos@magnetico-fotoimanes.com',
+      subject: `✅ PAGO APROBADO - ${paymentData.orderId} - $${paymentData.amount}`,
+      html: emailHtml
+    });
+
+    if (error) {
+      throw new Error(`Resend error: ${error.message}`);
+    }
+
+    console.log(`✅ Email de pago aprobado enviado: ${paymentData.orderId}`);
+    return true;
+    
+  } catch (error) {
+    console.error('❌ Error enviando email de pago aprobado:', error.message);
+    return false;
+  }
+};
+
+// 🔥 4. EMAIL DE CONFIRMACIÓN AL CLIENTE (pago aprobado)
+const sendCustomerPaymentConfirmation = async (customerData) => {
+  try {
+    if (!resend) {
+      console.log('📧 Resend no configurado - Simulando email al cliente');
+      return true;
+    }
+
+    console.log('📧 Enviando confirmación de pago al cliente...');
+    
+    const emailHtml = `
+      <!DOCTYPE html>
+      <html>
+        <head>
+          <style>
+            body { font-family: Arial, sans-serif; color: #333; }
+            .header { background: #4CAF50; color: white; padding: 20px; text-align: center; }
+            .content { padding: 20px; }
+            .order-details { background: #f9f9f9; padding: 15px; border-radius: 8px; margin: 15px 0; }
+            .status { color: #4CAF50; font-weight: bold; }
+            .celebrate { background: #e8f5e8; padding: 20px; border-radius: 8px; margin: 20px 0; text-align: center; }
+          </style>
+        </head>
+        <body>
+          <div class="header">
+            <h1>¡Pago Confirmado! 🎉</h1>
+            <p>Tu pedido está siendo procesado</p>
+          </div>
+          <div class="content">
+            <div class="celebrate">
+              <h2>¡Gracias por tu compra!</h2>
+              <p style="font-size: 1.1em; margin: 10px 0;">Tu pago ha sido confirmado exitosamente</p>
+            </div>
+            
+            <h2>Hola ${customerData.customerName},</h2>
+            <p class="status">✅ Tu pago ha sido confirmado exitosamente.</p>
+            
+            <div class="order-details">
+              <h3>📋 Resumen de tu pedido</h3>
+              <p><strong>Número de orden:</strong> ${customerData.orderId}</p>
+              <p><strong>ID de pago:</strong> ${customerData.paymentId}</p>
+              <p><strong>Total pagado:</strong> $${customerData.amount}</p>
+              <p><strong>Fecha de pago:</strong> ${new Date(customerData.date).toLocaleString('es-AR')}</p>
+              <p><strong>Método de pago:</strong> ${customerData.paymentMethod || 'Tarjeta'}</p>
+            </div>
+
+            <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 20px 0;">
+              <h3>📦 Estado de tu pedido</h3>
+              <p><strong>Estado:</strong> <span style="color: #4CAF50; font-weight: bold;">✅ PAGO CONFIRMADO - EN PROCESAMIENTO</span></p>
+              <p>Estamos preparando tus fotoimanes con mucho cuidado.</p>
+            </div>
+
+            <p><strong>¿Qué sigue?</strong></p>
+            <ul>
+              <li>Estamos procesando tus fotoimanes</li>
+              <li>Recibirás una notificación cuando sean enviados</li>
+              <li>Tiempo de procesamiento: 24-48 horas</li>
+              <li>Te contactaremos para coordinar el envío</li>
+            </ul>
+
+            <p>Si tenés alguna pregunta, respondé a este email.</p>
+            
+            <p>¡Gracias por confiar en nosotros!<br>El equipo de <strong>Magnético Fotoimanes</strong></p>
+          </div>
+        </body>
+      </html>
+    `;
+
+    const { data, error } = await resend.emails.send({
+      from: 'Magnético Fotoimanes <pedidos@magnetico-fotoimanes.com>',
+      to: customerData.customerEmail,
+      subject: `✅ Pago Confirmado - Pedido ${customerData.orderId}`,
+      html: emailHtml
+    });
+
+    if (error) {
+      throw new Error(`Resend error: ${error.message}`);
+    }
+
+    console.log(`✅ Email de confirmación de pago enviado al cliente: ${customerData.orderId}`);
+    return true;
+    
+  } catch (error) {
+    console.error('❌ Error enviando confirmación de pago al cliente:', error.message);
+    return false;
+  }
+};
+
 // 🔥 FUNCIÓN MERCADO PAGO
 const createMercadoPagoPreference = async (orderData) => {
   try {
@@ -249,9 +422,9 @@ const createMercadoPagoPreference = async (orderData) => {
         name: name.trim(),
       },
       back_urls: {
-        success: `https://magnetico-fotoimanes.com/success?order=${orderId}`,
-        failure: `https://magnetico-fotoimanes.com/error?order=${orderId}`,
-        pending: `https://magnetico-fotoimanes.com/pending?order=${orderId}`,
+        success: `https://magnetico-fotoimanes.com/?payment=success&order=${orderId}`,
+        failure: `https://magnetico-fotoimanes.com/?payment=error&order=${orderId}`,
+        pending: `https://magnetico-fotoimanes.com/?payment=pending&order=${orderId}`,
       },
       auto_return: "approved",
       external_reference: orderId,
@@ -279,6 +452,83 @@ const createMercadoPagoPreference = async (orderData) => {
     throw new Error(`Error al crear pago: ${error.message}`);
   }
 };
+
+// 🔥 WEBHOOK PARA PAGOS APROBADOS
+router.post("/webhook", express.json(), async (req, res) => {
+  console.log('🔔 Webhook MP recibido:', {
+    body: req.body,
+    query: req.query
+  });
+  
+  try {
+    const { type, data } = req.body;
+    
+    if (type === "payment") {
+      const paymentId = data.id;
+      
+      console.log(`💰 Procesando pago: ${paymentId}`);
+      
+      // Obtener detalles del pago de MP
+      const response = await axios.get(
+        `https://api.mercadopago.com/v1/payments/${paymentId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`
+          }
+        }
+      );
+      
+      const payment = response.data;
+      const orderId = payment.external_reference;
+      
+      console.log(`📋 Detalles del pago ${paymentId}:`, {
+        status: payment.status,
+        orderId: orderId,
+        amount: payment.transaction_amount,
+        customer: payment.payer.email
+      });
+      
+      if (payment.status === 'approved') {
+        console.log(`✅ Pago APROBADO para orden: ${orderId}`);
+        
+        // 🔥 ENVIAR EMAILS DE PAGO APROBADO
+        const paymentData = {
+          orderId: orderId,
+          paymentId: paymentId,
+          amount: payment.transaction_amount,
+          date: payment.date_approved,
+          paymentMethod: payment.payment_method_id,
+          customerName: `${payment.payer.first_name} ${payment.payer.last_name}`,
+          customerEmail: payment.payer.email,
+          customerPhone: payment.payer.phone?.number || 'No proporcionado',
+          customerAddress: `${payment.payer.address?.street_name || ''} ${payment.payer.address?.street_number || ''}`.trim() || 'No proporcionada'
+        };
+
+        console.log('📧 Enviando emails de confirmación de pago...');
+        
+        // Email para vos (pedidos@magnetico...)
+        await sendPaymentApprovedEmail(paymentData).catch(e => 
+          console.error('❌ Error email pago aprobado:', e.message)
+        );
+        
+        // Email para el cliente
+        await sendCustomerPaymentConfirmation(paymentData).catch(e => 
+          console.error('❌ Error email confirmación cliente:', e.message)
+        );
+        
+        console.log(`🎉 Emails de confirmación enviados para orden ${orderId}`);
+        
+      } else {
+        console.log(`ℹ️ Pago ${paymentId} con estado: ${payment.status}`);
+      }
+    }
+    
+    res.status(200).send('OK');
+  } catch (error) {
+    console.error('❌ Error en webhook:', error.message);
+    res.status(200).send('OK');
+  }
+});
 
 // 🔥 ENDPOINT PRINCIPAL
 router.post("/", upload.array("photos"), async (req, res) => {
@@ -381,6 +631,14 @@ router.get("/config/price", (req, res) => {
     price: getUnitPrice(),
     unit_price: getUnitPrice(),
     currency: "ARS"
+  });
+});
+
+router.get("/health", (req, res) => {
+  res.json({
+    status: "ok",
+    service: "order-api",
+    timestamp: new Date().toISOString(),
   });
 });
 
