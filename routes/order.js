@@ -1,5 +1,5 @@
 // -------------------------
-// routes/order.js - VERSIÓN COMPLETA CORREGIDA
+// routes/order.js - VERSIÓN COMPLETAMENTE CORREGIDA
 // -------------------------
 import express from "express";
 import multer from "multer";
@@ -177,7 +177,7 @@ const createMercadoPagoPreference = async (
   unitPrice,
   totalPrice,
   orderId,
-  tipo = "fotoimanes_unitario"
+  tipo = "fotoimanes_unitario" // 🔥 VALOR POR DEFECTO AGREGADO
 ) => {
   try {
     const mpToken = process.env.MP_ACCESS_TOKEN;
@@ -292,8 +292,18 @@ router.post("/", upload.array("photos"), async (req, res) => {
   console.log(`🌐 Origen: ${req.get("origin")}`);
 
   try {
-    const { name, email, phone, address, plan, cantidad, precio_total, tipo } =
-      req.body;
+    // 🔥 CORRECCIÓN CRÍTICA: AGREGAR VALOR POR DEFECTO PARA 'tipo'
+    const { 
+      name, 
+      email, 
+      phone, 
+      address, 
+      plan, 
+      cantidad, 
+      precio_total, 
+      tipo = "fotoimanes_unitario" // 🔥 VALOR POR DEFECTO AGREGADO
+    } = req.body;
+    
     const photos = req.files || [];
     const photoCount = photos.length;
 
@@ -305,6 +315,7 @@ router.post("/", upload.array("photos"), async (req, res) => {
       photos: photoCount,
       plan: plan || "unitario",
       cantidad: cantidad || "N/A",
+      tipo: tipo || "fotoimanes_unitario" // 🔥 LOG PARA VERIFICAR
     });
 
     // 🔥 VALIDACIONES MEJORADAS PARA PLANES
@@ -390,6 +401,7 @@ router.post("/", upload.array("photos"), async (req, res) => {
       },
       photosProcessed: photoCount,
       plan: plan || null,
+      tipo: tipo, // 🔥 INCLUIR TIPO EN RESPUESTA
       timestamp: new Date().toISOString(),
     });
 
