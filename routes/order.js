@@ -192,30 +192,37 @@ const createMercadoPagoPreference = async (
     const frontendUrl = "https://magnetico-fotoimanes.com";
     const backendUrl = "https://magnetico-server-1.onrender.com";
 
-    // 🔥 CONFIGURACIÓN DEFINITIVA - ELIMINAR COMPLETAMENTE LAS REDIRECCIONES
+    // 🔥 CONFIGURACIÓN SIMPLIFICADA Y CORRECTA
     const payload = {
-  items: [
-    {
-      title: `${photoCount} Fotoimanes Magnético`,
-      description: `Pedido de ${name} - ${photoCount} fotos personalizadas`,
-      quantity: 1,
-      currency_id: "ARS",
-      unit_price: Math.round(totalPrice),
-    },
-  ],
-  payer: {
-    email: email,
-    name: name,
-  },
-  // 🔥 ESTO ES LO MÁS IMPORTANTE:
-  // NO USES back_urls NI auto_return
-  external_reference: orderId,
-  notification_url: `${backendUrl}/api/webhook`,
-  expires: false,
-  binary_mode: true,
-};
+      items: [
+        {
+          title: `${photoCount} Fotoimanes Magnético`,
+          description: `Pedido de ${name} - ${photoCount} fotos personalizadas`,
+          quantity: 1,
+          currency_id: "ARS",
+          unit_price: Math.round(totalPrice), // 🔥 REDONDEAR PRECIO
+        },
+      ],
+      payer: {
+        email: email,
+        name: name,
+      },
+      // 🔥 CONFIGURACIÓN CRÍTICA - ELIMINAR REDIRECCIONES AUTOMÁTICAS
+      back_urls: {
+        success: `${frontendUrl}/success`,
+        failure: `${frontendUrl}/error`, 
+        pending: `${frontendUrl}/pending`,
+      },
+      // 🔥 DESHABILITAR AUTO_RETURN PARA EVITAR REDIRECCIONES
+      auto_return: "none", // 🔥 CAMBIAR de "approved" a "none"
+      external_reference: orderId,
+      notification_url: `${backendUrl}/api/webhook`,
+      // 🔥 CONFIGURACIÓN PARA BRICKS
+      expires: false,
+      binary_mode: true,
+    };
 
-    console.log("📦 Payload MP (SIN back_urls):", JSON.stringify(payload, null, 2));
+    console.log("📦 Payload MP:", JSON.stringify(payload, null, 2));
 
     const response = await axios.post(
       "https://api.mercadopago.com/checkout/preferences",
