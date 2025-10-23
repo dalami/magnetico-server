@@ -162,50 +162,78 @@ console.log('✅ Rutas cargadas: /api/send-photos, /api/config, /api/admin');
 // -------------------------
 // Webhook MP (raw body)
 // -------------------------
-app.post('/api/webhook',      // ✅ CORRECTO: usar 'app' en lugar de 'router'
+// -------------------------
+// Webhook MP CORREGIDO en server.js
+// -------------------------
+app.post('/api/webhook', 
   express.raw({ type: "application/json", limit: "1mb" }), 
   async (req, res) => {
+    console.log('🔔🔔🔔 WEBHOOK MP LLAMADO - INICIO 🔔🔔🔔');
+    console.log('📋 HEADERS:', req.headers);
+    
     try {
-      console.log('🟢 Webhook MP recibido:', {
-        headers: req.headers,
-        timestamp: new Date().toISOString()
-      });
-
-      const signature = req.headers['x-signature'];
-      const requestId = req.headers['x-request-id'];
       const payload = req.body.toString();
       const data = JSON.parse(payload);
-
-      // 🔥 VALIDACIÓN DE FIRMA (requerida por MP)
-      if (signature) {
-        // Extraer ts y v1 del signature
-        const parts = signature.split(',');
-        let ts, v1;
-        parts.forEach(part => {
-          const [key, value] = part.split('=');
-          if (key === 'ts') ts = value;
-          if (key === 'v1') v1 = value;
-        });
-
-        // TODO: Implementar validación HMAC con tu secret key de MP
-        console.log('🔐 Signature validation needed:', { ts, v1, requestId });
-      }
-
-      // Procesar el evento
-      if (data.type === 'payment') {
+      
+      console.log('📦 BODY COMPLETO:', JSON.stringify(data, null, 2));
+      console.log('🎯 Tipo de webhook:', data.type);
+      
+      if (data.type === "payment") {
         const paymentId = data.data.id;
-        console.log(`💰 Payment event: ${paymentId}, Action: ${data.action}`);
+        console.log(`💰 Procesando pago: ${paymentId}`);
         
-        // Aquí actualizás el estado de tu pedido
-        // Buscar por external_reference = tu orderId
-      }
+        // Obtener detalles del pago
+        const response = await axios.get(
+          `https://api.mercadopago.com/v1/payments/${paymentId}`,
+          {
+            headers: {
+              Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`
+            }
+          }
+        );
+        
+        const payment = response.data;
+        const orderId = payment.external_reference;
+        
+        console.log(`📋 Estado del pago ${paymentId}: ${payment.status}`);
+        console.log(`📦 Orden asociada: ${orderId}`);
+        
+        if (payment.status === 'approved') {
+          console.log(`✅✅✅ PAGO APROBADO DETECTADO ✅✅✅`);
+          
+          const paymentData = {
+            orderId: orderId,
+            paymentId: paymentId,
+            amount: payment.transaction_amount,
+            date: payment.date_approved,
+            paymentMethod: payment.payment_method_id,
+            customerName: `${payment.payer.first_name} ${payment.payer.last_name}`,
+            customerEmail: payment.payer.email,
+            customerPhone: payment.payer.phone?.number || 'No proporcionado',
+            customerAddress: `${payment.payer.address?.street_name || ''} ${payment.payer.address?.street_number || ''}`.trim() || 'No proporcionada'
+          };
 
-      // 🔥 RESPONDER INMEDIATAMENTE (MP espera < 22 segundos)
+          console.log('📧📧📧 INICIANDO ENVÍO DE EMAILS 📧📧📧');
+          
+          // Email para vos
+          const result1 = await sendPaymentApprovedEmail(paymentData);
+          console.log(`📧 Email a pedidos@: ${result1 ? '✅' : '❌'}`);
+          
+          // Email para el cliente
+          const result2 = await sendCustomerPaymentConfirmation(paymentData);
+          console.log(`📧 Email al cliente: ${result2 ? '✅' : '❌'}`);
+          
+          console.log(`🎉🎉🎉 PROCESO COMPLETADO - Emails enviados 🎉🎉🎉`);
+        }
+      }
+      
+      console.log('🔔🔔🔔 WEBHOOK MP PROCESADO - FIN 🔔🔔🔔');
       res.status(200).json({ status: 'webhook received' });
       
     } catch (error) {
-      console.error('❌ Error en webhook:', error);
-      res.status(400).json({ error: 'Invalid webhook' });
+      console.error('💥💥💥 ERROR CRÍTICO EN WEBHOOK:', error.message);
+      console.error('Stack:', error.stack);
+      res.status(200).json({ status: 'error', message: error.message });
     }
   }
 );
