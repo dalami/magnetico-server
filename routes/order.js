@@ -1,21 +1,21 @@
 // -------------------------
-// routes/order.js - VERSIÓN CON EMAILS
+// routes/order.js - VERSIÓN CORREGIDA PARA RESEND
 // -------------------------
 import express from "express";
 import multer from "multer";
 import axios from "axios";
 import cors from "cors";
-import nodemailer from "nodemailer";
+import { Resend } from 'resend';
 
 const router = express.Router();
 
-// Configuración CORS
+// Configurar CORS
 router.use(cors({
   origin: ['https://magnetico-fotoimanes.com', 'https://www.magnetico-fotoimanes.com'],
   credentials: true
 }));
 
-// Configuración multer
+// Configuración de multer
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
@@ -27,21 +27,13 @@ const upload = multer({
 // Precio consistente
 const getUnitPrice = () => 2500;
 
-// 🔥 CONFIGURACIÓN DE EMAIL (USA LA QUE YA TENÍAS FUNCIONANDO)
-const createEmailTransporter = () => {
-  return nodemailer.createTransporter({
-    service: 'gmail', // o el servicio que usabas
-    auth: {
-      user: process.env.EMAIL_USER,
-      pass: process.env.EMAIL_PASS
-    }
-  });
-};
+// 🔥 CONFIGURACIÓN DE RESEND
+const resend = new Resend(process.env.RESEND_API_KEY);
 
-// 🔥 1. EMAIL DE PEDIDO RECIBIDO (al recibir las fotos)
+// 🔥 1. EMAIL DE PEDIDO RECIBIDO (para vos)
 const sendOrderReceivedEmail = async (orderData, photos) => {
   try {
-    const transporter = createEmailTransporter();
+    console.log('📧 Intentando enviar email de pedido recibido...');
     
     const emailHtml = `
       <!DOCTYPE html>
@@ -86,30 +78,28 @@ const sendOrderReceivedEmail = async (orderData, photos) => {
       </html>
     `;
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
+    const { data, error } = await resend.emails.send({
+      from: 'Magnético Fotoimanes <notificaciones@magnetico-fotoimanes.com>',
       to: process.env.ORDER_NOTIFICATION_EMAIL || 'tu-email@gmail.com',
       subject: `📦 Pedido Recibido - ${orderData.orderId} - Pendiente de Pago`,
       html: emailHtml,
-      attachments: photos.map((photo, index) => ({
-        filename: `foto_${index + 1}.jpg`,
-        content: photo.buffer,
-        contentType: 'image/jpeg'
-      }))
-    };
+    });
 
-    await transporter.sendMail(mailOptions);
+    if (error) {
+      throw new Error(`Resend error: ${error.message}`);
+    }
+
     console.log(`✅ Email de pedido recibido enviado: ${orderData.orderId}`);
     
   } catch (error) {
-    console.error('❌ Error enviando email de pedido:', error);
+    console.error('❌ Error enviando email de pedido:', error.message);
   }
 };
 
 // 🔥 2. EMAIL DE CONFIRMACIÓN AL CLIENTE
 const sendCustomerConfirmationEmail = async (orderData) => {
   try {
-    const transporter = createEmailTransporter();
+    console.log('📧 Intentando enviar email al cliente...');
     
     const emailHtml = `
       <!DOCTYPE html>
@@ -160,25 +150,28 @@ const sendCustomerConfirmationEmail = async (orderData) => {
       </html>
     `;
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
+    const { data, error } = await resend.emails.send({
+      from: 'Magnético Fotoimanes <notificaciones@magnetico-fotoimanes.com>',
       to: orderData.email,
       subject: `📦 Confirmación de Pedido - ${orderData.orderId}`,
       html: emailHtml
-    };
+    });
 
-    await transporter.sendMail(mailOptions);
+    if (error) {
+      throw new Error(`Resend error: ${error.message}`);
+    }
+
     console.log(`✅ Email de confirmación enviado al cliente: ${orderData.orderId}`);
     
   } catch (error) {
-    console.error('❌ Error enviando email al cliente:', error);
+    console.error('❌ Error enviando email al cliente:', error.message);
   }
 };
 
 // 🔥 3. EMAIL DE PAGO APROBADO (para vos)
 const sendPaymentApprovedEmail = async (paymentData) => {
   try {
-    const transporter = createEmailTransporter();
+    console.log('📧 Intentando enviar email de pago aprobado...');
     
     const emailHtml = `
       <!DOCTYPE html>
@@ -227,25 +220,28 @@ const sendPaymentApprovedEmail = async (paymentData) => {
       </html>
     `;
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
+    const { data, error } = await resend.emails.send({
+      from: 'Magnético Fotoimanes <notificaciones@magnetico-fotoimanes.com>',
       to: process.env.ORDER_NOTIFICATION_EMAIL,
       subject: `✅ PAGO APROBADO - ${paymentData.orderId}`,
       html: emailHtml
-    };
+    });
 
-    await transporter.sendMail(mailOptions);
+    if (error) {
+      throw new Error(`Resend error: ${error.message}`);
+    }
+
     console.log(`✅ Email de pago aprobado enviado: ${paymentData.orderId}`);
     
   } catch (error) {
-    console.error('❌ Error enviando email de pago aprobado:', error);
+    console.error('❌ Error enviando email de pago aprobado:', error.message);
   }
 };
 
 // 🔥 4. EMAIL DE CONFIRMACIÓN AL CLIENTE (pago aprobado)
 const sendCustomerPaymentConfirmation = async (customerData) => {
   try {
-    const transporter = createEmailTransporter();
+    console.log('📧 Intentando enviar confirmación de pago al cliente...');
     
     const emailHtml = `
       <!DOCTYPE html>
@@ -291,18 +287,21 @@ const sendCustomerPaymentConfirmation = async (customerData) => {
       </html>
     `;
 
-    const mailOptions = {
-      from: process.env.EMAIL_USER,
+    const { data, error } = await resend.emails.send({
+      from: 'Magnético Fotoimanes <notificaciones@magnetico-fotoimanes.com>',
       to: customerData.email,
       subject: `✅ Pago Confirmado - Pedido ${customerData.orderId}`,
       html: emailHtml
-    };
+    });
 
-    await transporter.sendMail(mailOptions);
+    if (error) {
+      throw new Error(`Resend error: ${error.message}`);
+    }
+
     console.log(`✅ Email de confirmación de pago enviado al cliente: ${customerData.orderId}`);
     
   } catch (error) {
-    console.error('❌ Error enviando confirmación de pago al cliente:', error);
+    console.error('❌ Error enviando confirmación de pago al cliente:', error.message);
   }
 };
 
@@ -315,29 +314,16 @@ const createMercadoPagoPreference = async (orderData) => {
       throw new Error('MP_ACCESS_TOKEN no configurado');
     }
 
-    const { name, email, totalPrice, orderId, photoCount, plan, unitPrice } = orderData;
-
-    // 🔥 TÍTULO MÁS CLARO Y PRECISO PARA MP
-    let title, description;
-    
-    if (plan) {
-      title = `Plan ${plan} - ${photoCount} Fotoimanes`;
-      description = `Fotoimanes personalizados - ${photoCount} unidades`;
-    } else {
-      title = `${photoCount} Fotoimanes Personalizados`;
-      description = `Fotoimanes magnéticos - ${photoCount} unidades`;
-    }
-
-    console.log(`💰 Creando preferencia MP: $${totalPrice} por ${photoCount} fotoimanes`);
+    const { name, email, totalPrice, orderId, photoCount, plan } = orderData;
 
     const payload = {
       items: [
         {
-          title: title, // 🔥 TÍTULO CLARO
-          description: description, // 🔥 DESCRIPCIÓN ESPECÍFICA
+          title: `Fotoimanes Magnético - ${photoCount} unidades`,
+          description: `Pedido ${orderId}`,
           quantity: 1,
           currency_id: "ARS",
-          unit_price: Math.round(totalPrice), // 🔥 PRECIO EXACTO
+          unit_price: Math.round(totalPrice),
         },
       ],
       payer: {
@@ -354,13 +340,6 @@ const createMercadoPagoPreference = async (orderData) => {
       notification_url: "https://magnetico-server-1.onrender.com/api/webhook",
       expires: false,
       binary_mode: true,
-      // 🔥 CONFIGURACIÓN ADICIONAL PARA MEJORAR LA VISUALIZACIÓN
-      statement_descriptor: "MAGNETICO FOTOIMANES",
-      metadata: {
-        product: "fotoimanes",
-        quantity: photoCount,
-        unit_price: unitPrice
-      }
     };
 
     const response = await axios.post(
@@ -375,7 +354,6 @@ const createMercadoPagoPreference = async (orderData) => {
       }
     );
 
-    console.log("✅ Preferencia MP creada con precio:", totalPrice);
     return response.data;
 
   } catch (error) {
@@ -438,8 +416,8 @@ router.post("/", upload.array("photos"), async (req, res) => {
     orderData.paymentLink = preference.init_point;
 
     // 🔥 ENVIAR EMAILS DE PEDIDO RECIBIDO (no bloqueante)
-    sendOrderReceivedEmail(orderData, photos).catch(e => console.error('Error email pedido:', e));
-    sendCustomerConfirmationEmail(orderData).catch(e => console.error('Error email cliente:', e));
+    sendOrderReceivedEmail(orderData, photos).catch(e => console.error('Error email pedido:', e.message));
+    sendCustomerConfirmationEmail(orderData).catch(e => console.error('Error email cliente:', e.message));
 
     // Respuesta exitosa
     res.status(200).json({
@@ -509,12 +487,12 @@ router.post("/webhook", async (req, res) => {
           plan: 'Unitario' // Podrías obtener esto de una base de datos
         };
 
-        sendPaymentApprovedEmail(paymentData).catch(e => console.error('Error email pago aprobado:', e));
+        sendPaymentApprovedEmail(paymentData).catch(e => console.error('Error email pago aprobado:', e.message));
         sendCustomerPaymentConfirmation({
           ...paymentData,
           name: payment.payer.first_name + ' ' + payment.payer.last_name,
           email: payment.payer.email
-        }).catch(e => console.error('Error email confirmación cliente:', e));
+        }).catch(e => console.error('Error email confirmación cliente:', e.message));
       }
     }
     
