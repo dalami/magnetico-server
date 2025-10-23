@@ -1,5 +1,5 @@
 // -------------------------
-// routes/order.js - VERSIÓN CORREGIDA PARA RESEND
+// routes/order.js - VERSIÓN CON RESEND CORREGIDA
 // -------------------------
 import express from "express";
 import multer from "multer";
@@ -27,13 +27,35 @@ const upload = multer({
 // Precio consistente
 const getUnitPrice = () => 2500;
 
-// 🔥 CONFIGURACIÓN DE RESEND
-const resend = new Resend(process.env.RESEND_API_KEY);
+// 🔥 CONFIGURACIÓN DE RESEND CON VALIDACIÓN
+let resend;
+try {
+  if (!process.env.RESEND_API_KEY) {
+    console.warn('⚠️ RESEND_API_KEY no configurada. Los emails no se enviarán.');
+  } else {
+    resend = new Resend(process.env.RESEND_API_KEY);
+    console.log('✅ Resend configurado correctamente');
+  }
+} catch (error) {
+  console.error('❌ Error configurando Resend:', error.message);
+}
 
 // 🔥 1. EMAIL DE PEDIDO RECIBIDO (para vos)
-const sendOrderReceivedEmail = async (orderData, photos) => {
+const sendOrderReceivedEmail = async (orderData) => {
   try {
-    console.log('📧 Intentando enviar email de pedido recibido...');
+    if (!resend) {
+      console.log('📧 Resend no configurado - Simulando envío de email');
+      console.log('📋 Datos del pedido:', {
+        orderId: orderData.orderId,
+        name: orderData.name,
+        email: orderData.email,
+        photos: orderData.photoCount,
+        total: orderData.totalPrice
+      });
+      return true;
+    }
+
+    console.log('📧 Enviando email de pedido recibido...');
     
     const emailHtml = `
       <!DOCTYPE html>
@@ -79,7 +101,7 @@ const sendOrderReceivedEmail = async (orderData, photos) => {
     `;
 
     const { data, error } = await resend.emails.send({
-      from: 'Magnético Fotoimanes <notificaciones@magnetico-fotoimanes.com>',
+      from: 'Magnético Fotoimanes <onboarding@resend.dev>',
       to: process.env.ORDER_NOTIFICATION_EMAIL || 'tu-email@gmail.com',
       subject: `📦 Pedido Recibido - ${orderData.orderId} - Pendiente de Pago`,
       html: emailHtml,
@@ -90,16 +112,23 @@ const sendOrderReceivedEmail = async (orderData, photos) => {
     }
 
     console.log(`✅ Email de pedido recibido enviado: ${orderData.orderId}`);
+    return true;
     
   } catch (error) {
     console.error('❌ Error enviando email de pedido:', error.message);
+    return false;
   }
 };
 
 // 🔥 2. EMAIL DE CONFIRMACIÓN AL CLIENTE
 const sendCustomerConfirmationEmail = async (orderData) => {
   try {
-    console.log('📧 Intentando enviar email al cliente...');
+    if (!resend) {
+      console.log('📧 Resend no configurado - Simulando envío al cliente');
+      return true;
+    }
+
+    console.log('📧 Enviando email al cliente...');
     
     const emailHtml = `
       <!DOCTYPE html>
@@ -151,7 +180,7 @@ const sendCustomerConfirmationEmail = async (orderData) => {
     `;
 
     const { data, error } = await resend.emails.send({
-      from: 'Magnético Fotoimanes <notificaciones@magnetico-fotoimanes.com>',
+      from: 'Magnético Fotoimanes <onboarding@resend.dev>',
       to: orderData.email,
       subject: `📦 Confirmación de Pedido - ${orderData.orderId}`,
       html: emailHtml
@@ -162,146 +191,11 @@ const sendCustomerConfirmationEmail = async (orderData) => {
     }
 
     console.log(`✅ Email de confirmación enviado al cliente: ${orderData.orderId}`);
+    return true;
     
   } catch (error) {
     console.error('❌ Error enviando email al cliente:', error.message);
-  }
-};
-
-// 🔥 3. EMAIL DE PAGO APROBADO (para vos)
-const sendPaymentApprovedEmail = async (paymentData) => {
-  try {
-    console.log('📧 Intentando enviar email de pago aprobado...');
-    
-    const emailHtml = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; color: #333; }
-            .header { background: #4CAF50; color: white; padding: 20px; text-align: center; }
-            .content { padding: 20px; }
-            .order-details { background: #f9f9f9; padding: 15px; border-radius: 8px; margin: 15px 0; }
-            .status { color: #4CAF50; font-weight: bold; font-size: 1.2em; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>✅ PAGO APROBADO</h1>
-            <p>Orden: ${paymentData.orderId}</p>
-          </div>
-          <div class="content">
-            <div class="status">🟢 PAGO CONFIRMADO - PROCESAR PEDIDO</div>
-            
-            <h2>👤 Información del Cliente</h2>
-            <p><strong>Nombre:</strong> ${paymentData.customerName}</p>
-            <p><strong>Email:</strong> ${paymentData.customerEmail}</p>
-            <p><strong>Teléfono:</strong> ${paymentData.customerPhone || 'No proporcionado'}</p>
-            <p><strong>Dirección:</strong> ${paymentData.customerAddress || 'No proporcionada'}</p>
-            
-            <div class="order-details">
-              <h2>💰 Información de Pago</h2>
-              <p><strong>ID de Pago MP:</strong> ${paymentData.paymentId}</p>
-              <p><strong>Monto:</strong> $${paymentData.amount}</p>
-              <p><strong>Fecha de pago:</strong> ${new Date(paymentData.date).toLocaleString('es-AR')}</p>
-              <p><strong>Método:</strong> ${paymentData.paymentMethod || 'No especificado'}</p>
-            </div>
-
-            <div class="order-details">
-              <h2>📦 Detalles del Pedido</h2>
-              <p><strong>Producto:</strong> ${paymentData.photoCount} Fotoimanes</p>
-              <p><strong>Plan:</strong> ${paymentData.plan || 'Unitario'}</p>
-              <p><strong>Total:</strong> $${paymentData.amount}</p>
-            </div>
-
-            <p><strong>Acción requerida:</strong> Procesar el pedido y preparar envío.</p>
-          </div>
-        </body>
-      </html>
-    `;
-
-    const { data, error } = await resend.emails.send({
-      from: 'Magnético Fotoimanes <notificaciones@magnetico-fotoimanes.com>',
-      to: process.env.ORDER_NOTIFICATION_EMAIL,
-      subject: `✅ PAGO APROBADO - ${paymentData.orderId}`,
-      html: emailHtml
-    });
-
-    if (error) {
-      throw new Error(`Resend error: ${error.message}`);
-    }
-
-    console.log(`✅ Email de pago aprobado enviado: ${paymentData.orderId}`);
-    
-  } catch (error) {
-    console.error('❌ Error enviando email de pago aprobado:', error.message);
-  }
-};
-
-// 🔥 4. EMAIL DE CONFIRMACIÓN AL CLIENTE (pago aprobado)
-const sendCustomerPaymentConfirmation = async (customerData) => {
-  try {
-    console.log('📧 Intentando enviar confirmación de pago al cliente...');
-    
-    const emailHtml = `
-      <!DOCTYPE html>
-      <html>
-        <head>
-          <style>
-            body { font-family: Arial, sans-serif; color: #333; }
-            .header { background: #4CAF50; color: white; padding: 20px; text-align: center; }
-            .content { padding: 20px; }
-            .order-details { background: #f9f9f9; padding: 15px; border-radius: 8px; margin: 15px 0; }
-            .status { color: #4CAF50; font-weight: bold; }
-          </style>
-        </head>
-        <body>
-          <div class="header">
-            <h1>¡Pago Confirmado! 🎉</h1>
-            <p>Tu pedido está siendo procesado</p>
-          </div>
-          <div class="content">
-            <h2>Hola ${customerData.name},</h2>
-            <p class="status">✅ Tu pago ha sido confirmado exitosamente.</p>
-            
-            <div class="order-details">
-              <h3>📋 Resumen de tu pedido</h3>
-              <p><strong>Número de orden:</strong> ${customerData.orderId}</p>
-              <p><strong>Producto:</strong> ${customerData.photoCount} Fotoimanes Magnético</p>
-              <p><strong>Total pagado:</strong> $${customerData.amount}</p>
-              <p><strong>Fecha de pago:</strong> ${new Date(customerData.date).toLocaleString('es-AR')}</p>
-            </div>
-
-            <p><strong>¿Qué sigue?</strong></p>
-            <ul>
-              <li>Estamos procesando tus fotoimanes</li>
-              <li>Recibirás una notificación cuando sean enviados</li>
-              <li>Tiempo de procesamiento: 24-48 horas</li>
-            </ul>
-
-            <p>Si tenés alguna pregunta, no dudes en responder este email.</p>
-            
-            <p>¡Gracias por tu compra!<br>El equipo de <strong>Magnético</strong></p>
-          </div>
-        </body>
-      </html>
-    `;
-
-    const { data, error } = await resend.emails.send({
-      from: 'Magnético Fotoimanes <notificaciones@magnetico-fotoimanes.com>',
-      to: customerData.email,
-      subject: `✅ Pago Confirmado - Pedido ${customerData.orderId}`,
-      html: emailHtml
-    });
-
-    if (error) {
-      throw new Error(`Resend error: ${error.message}`);
-    }
-
-    console.log(`✅ Email de confirmación de pago enviado al cliente: ${customerData.orderId}`);
-    
-  } catch (error) {
-    console.error('❌ Error enviando confirmación de pago al cliente:', error.message);
+    return false;
   }
 };
 
@@ -388,6 +282,13 @@ router.post("/", upload.array("photos"), async (req, res) => {
       return res.status(400).json({ success: false, error: "Nombre y email son obligatorios" });
     }
 
+    if (photoCount < 4) {
+      return res.status(400).json({ 
+        success: false, 
+        error: `Se requieren al menos 4 fotos. Recibiste ${photoCount}` 
+      });
+    }
+
     // Cálculo de precio
     const unitPrice = getUnitPrice();
     let totalPrice = tipo === "fotoimanes_plan" && precio_total ? parseFloat(precio_total) : unitPrice * photoCount;
@@ -415,15 +316,15 @@ router.post("/", upload.array("photos"), async (req, res) => {
     orderData.mpPreferenceId = preference.id;
     orderData.paymentLink = preference.init_point;
 
-    // 🔥 ENVIAR EMAILS DE PEDIDO RECIBIDO (no bloqueante)
-    sendOrderReceivedEmail(orderData, photos).catch(e => console.error('Error email pedido:', e.message));
+    // 🔥 ENVIAR EMAILS (no bloqueante)
+    sendOrderReceivedEmail(orderData).catch(e => console.error('Error email pedido:', e.message));
     sendCustomerConfirmationEmail(orderData).catch(e => console.error('Error email cliente:', e.message));
 
     // Respuesta exitosa
     res.status(200).json({
       success: true,
       message: "✅ Pedido procesado correctamente",
-      orderId: orderId,
+      orderId: orderData.orderId,
       payment: {
         preference_id: preference.id,
         init_point: preference.init_point,
@@ -435,7 +336,7 @@ router.post("/", upload.array("photos"), async (req, res) => {
       }
     });
 
-    console.log(`🎉 Pedido ${orderId} procesado - Emails enviados`);
+    console.log(`🎉 Pedido ${orderId} procesado - Total: $${totalPrice}`);
 
   } catch (error) {
     console.error(`💥 ERROR en ${orderId}:`, error.message);
@@ -444,62 +345,6 @@ router.post("/", upload.array("photos"), async (req, res) => {
       error: error.message || "Error interno del servidor",
       orderId: orderId
     });
-  }
-});
-
-// 🔥 WEBHOOK PARA PAGOS APROBADOS
-router.post("/webhook", async (req, res) => {
-  console.log('🔔 Webhook MP recibido:', req.query, req.body);
-  
-  try {
-    const { type, data } = req.body;
-    
-    if (type === "payment") {
-      const paymentId = data.id;
-      
-      // Obtener detalles del pago
-      const response = await axios.get(
-        `https://api.mercadopago.com/v1/payments/${paymentId}`,
-        {
-          headers: {
-            Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`
-          }
-        }
-      );
-      
-      const payment = response.data;
-      
-      if (payment.status === 'approved') {
-        const orderId = payment.external_reference;
-        
-        console.log(`✅ Pago aprobado: ${paymentId} para orden: ${orderId}`);
-        
-        // 🔥 ENVIAR EMAILS DE PAGO APROBADO
-        const paymentData = {
-          orderId: orderId,
-          paymentId: paymentId,
-          amount: payment.transaction_amount,
-          date: payment.date_approved,
-          paymentMethod: payment.payment_method_id,
-          customerName: payment.payer.first_name + ' ' + payment.payer.last_name,
-          customerEmail: payment.payer.email,
-          photoCount: 0, // Podrías obtener esto de una base de datos
-          plan: 'Unitario' // Podrías obtener esto de una base de datos
-        };
-
-        sendPaymentApprovedEmail(paymentData).catch(e => console.error('Error email pago aprobado:', e.message));
-        sendCustomerPaymentConfirmation({
-          ...paymentData,
-          name: payment.payer.first_name + ' ' + payment.payer.last_name,
-          email: payment.payer.email
-        }).catch(e => console.error('Error email confirmación cliente:', e.message));
-      }
-    }
-    
-    res.status(200).send('OK');
-  } catch (error) {
-    console.error('❌ Error en webhook:', error);
-    res.status(200).send('OK');
   }
 });
 
