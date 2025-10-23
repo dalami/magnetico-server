@@ -189,71 +189,40 @@ const createMercadoPagoPreference = async (
 
     console.log(`💳 Creando preferencia MP para ${orderId} (${tipo})...`);
 
-    // URLs seguras
     const frontendUrl = "https://magnetico-fotoimanes.com";
     const backendUrl = "https://magnetico-server-1.onrender.com";
 
-    // 🔥 CORRECCIÓN CRÍTICA: Configuración diferente para planes vs unitario
-    let items;
-
-    if (tipo === "fotoimanes_plan") {
-      // 🔥 PARA PLANES: 1 item con precio total
-      items = [
-        {
-          title: `Plan Fotoimanes - ${photoCount} unidades`,
-          description: `Pedido de ${name} - ${photoCount} fotoimanes personalizados`,
-          quantity: 1, // 🔥 SIEMPRE 1 para planes
-          currency_id: "ARS",
-          unit_price: totalPrice, // 🔥 PRECIO TOTAL del plan
-        },
-      ];
-    } else {
-      // 🔥 PARA SISTEMA UNITARIO: múltiples items
-      items = [
-        {
-          title: `${photoCount} Fotos Imantadas Magnético`,
-          description: `Pedido de ${name} - ${photoCount} fotos personalizadas`,
-          quantity: photoCount, // 🔥 CANTIDAD = número de fotos
-          currency_id: "ARS",
-          unit_price: unitPrice, // 🔥 PRECIO UNITARIO
-        },
-      ];
-    }
-
-    // 🔥 SIMPLIFICAR payment_methods - QUITAR configuraciones problemáticas
+    // 🔥 CONFIGURACIÓN DEFINITIVA - ELIMINAR COMPLETAMENTE LAS REDIRECCIONES
     const payload = {
       items: [
         {
-          title: `${photoCount} Fotos Imantadas Magnético`,
+          title: `${photoCount} Fotoimanes Magnético`,
           description: `Pedido de ${name} - ${photoCount} fotos personalizadas`,
-          quantity: tipo === "fotoimanes_plan" ? 1 : photoCount,
+          quantity: 1,
           currency_id: "ARS",
-          unit_price: tipo === "fotoimanes_plan" ? totalPrice : unitPrice,
-          category_id: "others",
+          unit_price: Math.round(totalPrice),
         },
       ],
       payer: {
         email: email,
         name: name,
       },
-      // 🔥 AGREGAR LOCALE (SOLUCIÓN AL PROBLEMA)
-      metadata: {
-        locale: "es-AR", // 🔥 ESTO FALTABA
-      },
-      payment_methods: {
-        // Configuración mínima
-      },
-      back_urls: {
-        success: `${frontendUrl}/success`,
-        failure: `${frontendUrl}/error`,
-        pending: `${frontendUrl}/pending`,
-      },
-      auto_return: "approved",
+      // 🔥 ELIMINAR BACK_URLS COMPLETAMENTE - ESTO ES CLAVE
+      // NO USAR back_urls NI auto_return
       external_reference: orderId,
       notification_url: `${backendUrl}/api/webhook`,
+      // 🔥 CONFIGURACIÓN MÍNIMA
+      expires: false,
+      binary_mode: true,
+      // 🔥 FORZAR COMPORTAMIENTO SIN REDIRECCIONES
+      payment_methods: {
+        default_payment_method_id: null,
+        installments: 1,
+        default_installments: 1,
+      }
     };
 
-    console.log("📦 Payload MP:", JSON.stringify(payload, null, 2));
+    console.log("📦 Payload MP (SIN back_urls):", JSON.stringify(payload, null, 2));
 
     const response = await axios.post(
       "https://api.mercadopago.com/checkout/preferences",
@@ -267,21 +236,16 @@ const createMercadoPagoPreference = async (
       }
     );
 
-    if (!response.data.init_point) {
-      throw new Error("Mercado Pago no devolvió link de pago");
+    if (!response.data.id) {
+      throw new Error("Mercado Pago no devolvió ID de preferencia");
     }
 
     console.log(`✅ Preferencia MP creada: ${response.data.id}`);
     return response.data;
+
   } catch (error) {
-    console.error("❌ Error con Mercado Pago:", {
-      message: error.message,
-      status: error.response?.status,
-      data: error.response?.data,
-    });
-    throw new Error(
-      `Error MP: ${error.response?.data?.message || error.message}`
-    );
+    console.error("❌ Error con Mercado Pago:", error.message);
+    throw error;
   }
 };
 
