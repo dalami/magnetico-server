@@ -1,5 +1,5 @@
 // -------------------------
-// routes/order.js -
+// routes/order.js - VERSIÓN CORREGIDA
 // -------------------------
 import express from "express";
 import multer from "multer";
@@ -9,18 +9,18 @@ import { getUnitPrice } from "../services/pricing.js";
 const router = express.Router();
 
 // ------------------------------
-// 🔥 Multer Configuración
+// 🔥 Multer Configuración MEJORADA
 // ------------------------------
 const upload = multer({
   storage: multer.memoryStorage(),
   limits: {
     fileSize: 3 * 1024 * 1024,
-    files: 10,
+    files: 20, // 🔥 Aumentado a 20 para planes
   },
 });
 
 // ------------------------------
-// 📧 Servicio de Email con RESEND
+// 📧 Servicio de Email con RESEND - CORREGIDO
 // ------------------------------
 const sendVendorEmailWithAttachments = async ({
   name,
@@ -40,11 +40,15 @@ const sendVendorEmailWithAttachments = async ({
 
     console.log(`📧 Preparando email con ${photos.length} fotos...`);
 
-    // Convertir fotos a base64
+    // Convertir fotos a base64 - MEJOR MANEJO DE ERRORES
     const attachments = photos
-      .slice(0, 5)
+      .slice(0, 10) // 🔥 Aumentado a 10 fotos máximo
       .map((file, index) => {
         try {
+          if (!file.buffer) {
+            console.warn(`⚠️ Foto ${index + 1} sin buffer`);
+            return null;
+          }
           return {
             filename: `Foto_${index + 1}_${orderId}.jpg`,
             content: file.buffer.toString("base64"),
@@ -62,7 +66,7 @@ const sendVendorEmailWithAttachments = async ({
     console.log(`📎 ${attachments.length} fotos preparadas para enviar`);
 
     const emailData = {
-      from: `Magnético Fotoimanes <${process.env.EMAIL_USER}>`,
+      from: `Magnético Fotoimanes <${process.env.EMAIL_FROM || 'no-reply@magnetico-fotoimanes.com'}>`,
       to: process.env.DESTINATION_EMAIL,
       reply_to: email,
       subject: `📦 Nuevo Pedido - ${photos.length} Fotoimanes - ${orderId}`,
@@ -128,7 +132,6 @@ const sendVendorEmailWithAttachments = async ({
     </html>
   `,
       attachments: attachments,
-      // 🔥 AGREGAR HEADERS IMPORTANTES
       headers: {
         "X-Priority": "1",
         "X-MSMail-Priority": "High",
@@ -168,7 +171,7 @@ const sendVendorEmailWithAttachments = async ({
 };
 
 // ------------------------------
-// 💳 Mercado Pago Service CON MEJOR ERROR HANDLING
+// 💳 Mercado Pago Service - CORREGIDO CON PAYMENT_METHODS
 // ------------------------------
 const createMercadoPagoPreference = async (
   name,
@@ -187,15 +190,16 @@ const createMercadoPagoPreference = async (
 
     console.log(`💳 Creando preferencia MP para ${orderId}...`);
 
-    // 🔥 CORREGIDO: Usar URLs seguras para MP
+    // URLs seguras
     const frontendUrl =
       process.env.NODE_ENV === "production"
-        ? process.env.FRONTEND_URL || "https://magnetico-app.vercel.app"
-        : "https://magnetico-app.vercel.app"; // 🔥 SIEMPRE HTTPS en producción
+        ? process.env.FRONTEND_URL || "https://magnetico-fotoimanes.com"
+        : "https://magnetico-fotoimanes.com";
 
     const backendUrl =
       process.env.BACKEND_URL || "https://magnetico-server-1.onrender.com";
 
+    // 🔥 CORRECCIÓN CRÍTICA: Agregar payment_methods para evitar el bug del botón
     const payload = {
       items: [
         {
@@ -209,6 +213,13 @@ const createMercadoPagoPreference = async (
       payer: {
         email: email,
         name: name,
+      },
+      // 🔥 AGREGADO: Configuración explícita de payment methods
+      payment_methods: {
+        excluded_payment_methods: [],
+        excluded_payment_types: [],
+        installments: 1,
+        default_installments: 1
       },
       back_urls: {
         success: `${frontendUrl}/success`,
@@ -285,7 +296,7 @@ async function processEmailBackground({
 }
 
 // ------------------------------
-// 🚀 ENDPOINT PRINCIPAL CON MEJOR LOGGING
+// 🚀 ENDPOINT PRINCIPAL - CORREGIDO PARA PLANES
 // ------------------------------
 router.post("/", upload.array("photos"), async (req, res) => {
   const orderId = `ORD-${Date.now().toString(36).toUpperCase()}`;
@@ -293,10 +304,9 @@ router.post("/", upload.array("photos"), async (req, res) => {
   console.log(`\n🎯 NUEVO PEDIDO INICIADO: ${orderId}`);
   console.log(`📋 Headers:`, req.headers);
   console.log(`🌐 Origen: ${req.get("origin")}`);
-  console.log(`📦 Content-Type: ${req.get("content-type")}`);
 
   try {
-    const { name, email, phone, address } = req.body;
+    const { name, email, phone, address, plan, cantidad, precio_total, tipo } = req.body;
     const photos = req.files || [];
     const photoCount = photos.length;
 
@@ -306,9 +316,11 @@ router.post("/", upload.array("photos"), async (req, res) => {
       phone: phone ? "✓" : "✗",
       address: address ? "✓" : "✗",
       photos: photoCount,
+      plan: plan || "unitario",
+      cantidad: cantidad || "N/A"
     });
 
-    // Validaciones
+    // 🔥 VALIDACIONES MEJORADAS PARA PLANES
     if (!name?.trim() || !email?.trim()) {
       console.log("❌ Validación fallida: nombre o email vacíos");
       return res.status(400).json({
@@ -317,22 +329,45 @@ router.post("/", upload.array("photos"), async (req, res) => {
       });
     }
 
-    if (photoCount < 4) {
-      console.log("❌ Validación fallida: menos de 4 fotos");
-      return res.status(400).json({
-        success: false,
-        error: "Se requieren al menos 4 fotos",
-      });
+    // Validar según tipo de pedido
+    if (tipo === "fotoimanes_plan" && plan && cantidad) {
+      // Validación para planes
+      if (photoCount !== parseInt(cantidad)) {
+        console.log(`❌ Plan ${plan}: esperaba ${cantidad} fotos, recibió ${photoCount}`);
+        return res.status(400).json({
+          success: false,
+          error: `El plan ${plan} incluye ${cantidad} fotoimanes. Subiste ${photoCount} fotos.`
+        });
+      }
+    } else {
+      // Validación para sistema unitario
+      if (photoCount < 4) {
+        console.log("❌ Validación fallida: menos de 4 fotos");
+        return res.status(400).json({
+          success: false,
+          error: "Se requieren al menos 4 fotos",
+        });
+      }
     }
 
-    // Obtener precio
-    let unitPrice;
+    // Obtener precio según el tipo
+    let unitPrice, totalPrice;
     try {
-      unitPrice = getUnitPrice();
-      console.log(`💰 Precio unitario: $${unitPrice}`);
+      if (tipo === "fotoimanes_plan" && precio_total) {
+        // Usar precio del plan
+        totalPrice = parseFloat(precio_total);
+        unitPrice = totalPrice / photoCount;
+        console.log(`💰 Plan ${plan}: $${totalPrice} total ($${unitPrice} c/u)`);
+      } else {
+        // Precio unitario normal
+        unitPrice = getUnitPrice();
+        totalPrice = unitPrice * photoCount;
+        console.log(`💰 Sistema unitario: $${unitPrice} c/u = $${totalPrice} total`);
+      }
     } catch (priceError) {
       console.error("❌ Error obteniendo precio:", priceError);
       unitPrice = 2500; // Fallback
+      totalPrice = unitPrice * photoCount;
     }
 
     // Crear preferencia MP
@@ -341,29 +376,30 @@ router.post("/", upload.array("photos"), async (req, res) => {
       name.trim(),
       email.trim(),
       photoCount,
-      unitPrice,
+      tipo === "fotoimanes_plan" ? totalPrice / photoCount : unitPrice, // 🔥 Precio unitario correcto
       orderId
     );
 
-    // Responder al cliente
+    // Responder al cliente INMEDIATAMENTE
     console.log(`⚡ Enviando respuesta al cliente...`);
     res.status(200).json({
       success: true,
-      message:
-        "✅ Pedido procesado correctamente. Redirigiendo a Mercado Pago...",
+      message: "✅ Pedido procesado correctamente. Redirigiendo a Mercado Pago...",
       orderId: orderId,
       payment: {
         init_point: preference.init_point,
         preference_id: preference.id,
-        total: unitPrice * photoCount,
+        total: totalPrice,
+        unit_price: unitPrice,
       },
       photosProcessed: photoCount,
+      plan: plan || null,
       timestamp: new Date().toISOString(),
     });
 
     console.log(`🎉 Pedido ${orderId} procesado exitosamente`);
 
-    // Email en segundo plano
+    // Email en segundo plano (NO bloquear la respuesta)
     setTimeout(async () => {
       try {
         await processEmailBackground({
@@ -378,16 +414,27 @@ router.post("/", upload.array("photos"), async (req, res) => {
         console.error(`❌ Error crítico en email background:`, emailError);
       }
     }, 500);
+
   } catch (error) {
     console.error(`💥 ERROR CRÍTICO en ${orderId}:`, {
       message: error.message,
       stack: error.stack,
-      body: req.body,
     });
 
-    res.status(500).json({
+    // 🔥 MEJOR MANEJO DE ERRORES
+    let errorMessage = "Error interno del servidor";
+    let statusCode = 500;
+
+    if (error.message.includes("Mercado Pago")) {
+      errorMessage = error.message;
+    } else if (error.message.includes("validación")) {
+      errorMessage = error.message;
+      statusCode = 400;
+    }
+
+    res.status(statusCode).json({
       success: false,
-      error: "Error interno del servidor: " + error.message,
+      error: errorMessage,
       orderId: orderId,
     });
   }
