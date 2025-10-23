@@ -194,33 +194,26 @@ const createMercadoPagoPreference = async (
 
     // 🔥 CONFIGURACIÓN DEFINITIVA - ELIMINAR COMPLETAMENTE LAS REDIRECCIONES
     const payload = {
-      items: [
-        {
-          title: `${photoCount} Fotoimanes Magnético`,
-          description: `Pedido de ${name} - ${photoCount} fotos personalizadas`,
-          quantity: 1,
-          currency_id: "ARS",
-          unit_price: Math.round(totalPrice),
-        },
-      ],
-      payer: {
-        email: email,
-        name: name,
-      },
-      // 🔥 ELIMINAR BACK_URLS COMPLETAMENTE - ESTO ES CLAVE
-      // NO USAR back_urls NI auto_return
-      external_reference: orderId,
-      notification_url: `${backendUrl}/api/webhook`,
-      // 🔥 CONFIGURACIÓN MÍNIMA
-      expires: false,
-      binary_mode: true,
-      // 🔥 FORZAR COMPORTAMIENTO SIN REDIRECCIONES
-      payment_methods: {
-        default_payment_method_id: null,
-        installments: 1,
-        default_installments: 1,
-      }
-    };
+  items: [
+    {
+      title: `${photoCount} Fotoimanes Magnético`,
+      description: `Pedido de ${name} - ${photoCount} fotos personalizadas`,
+      quantity: 1,
+      currency_id: "ARS",
+      unit_price: Math.round(totalPrice),
+    },
+  ],
+  payer: {
+    email: email,
+    name: name,
+  },
+  // 🔥 ESTO ES LO MÁS IMPORTANTE:
+  // NO USES back_urls NI auto_return
+  external_reference: orderId,
+  notification_url: `${backendUrl}/api/webhook`,
+  expires: false,
+  binary_mode: true,
+};
 
     console.log("📦 Payload MP (SIN back_urls):", JSON.stringify(payload, null, 2));
 
