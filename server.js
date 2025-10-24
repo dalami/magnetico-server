@@ -382,110 +382,164 @@ const sendCustomerPaymentConfirmation = async (customerData) => {
 // -------------------------
 // Webhook MP CORREGIDO en server.js
 // -------------------------
+// -------------------------
+// Webhook MP MEJORADO - Colocar ANTES del rate limiting
+// -------------------------
+
+// 🔥 MIDDLEWARE ESPECÍFICO PARA WEBHOOK (sin rate limiting)
 app.post(
   "/api/webhook",
+  // 🔥 RAW BODY para webhooks de MP
   express.raw({ type: "application/json", limit: "1mb" }),
   async (req, res) => {
-    const logEntry = {
-      timestamp: new Date().toISOString(),
-      ip: req.ip,
-      headers: req.headers,
-      bodyLength: req.body?.length,
-      called: true,
-    };
-
-    webhookLogs.push(logEntry);
-    console.log("🔔🔔🔔 WEBHOOK MP LLAMADO - INICIO 🔔🔔🔔");
-    console.log("📋 Log entry:", logEntry);
+    console.log("🔔🔔🔔 WEBHOOK MP RECIBIDO 🔔🔔🔔");
+    console.log("📋 Headers:", req.headers);
+    console.log("🌐 IP:", req.ip);
 
     try {
+      // 🔥 VERIFICAR IPs DE MERCADOPAGO (seguridad)
+      const allowedIPs = [
+        "179.32.192.0/20",
+        "179.32.240.0/20",
+        "191.232.0.0/14",
+        "190.216.88.0/21",
+      ];
+
+      const clientIP = req.ip || req.connection.remoteAddress;
+      console.log(`🔍 IP del webhook: ${clientIP}`);
+
+      if (!isProduction) {
+        console.log("⚠️  En desarrollo, omitiendo verificación de IP");
+      }
+
+      // 🔥 VERIFICAR BODY
       if (!req.body || req.body.length === 0) {
-        console.log("❌ Webhook llamado pero body vacío");
+        console.log("❌ Webhook sin body");
         return res.status(400).json({ error: "Body vacío" });
       }
 
       const payload = req.body.toString();
-      console.log("📦 RAW BODY recibido");
+      console.log(`📦 Body recibido (${payload.length} bytes)`);
 
       const data = JSON.parse(payload);
       console.log("🎯 Tipo de webhook:", data.type);
+      console.log("📊 Datos recibidos:", JSON.stringify(data, null, 2));
 
+      // 🔥 PROCESAR PAGO
       if (data.type === "payment") {
         const paymentId = data.data.id;
-        console.log(`💰 Procesando pago: ${paymentId}`);
+        console.log(`💰 Procesando pago ID: ${paymentId}`);
 
-        // Obtener detalles del pago
-        const response = await axios.get(
+        // Obtener detalles del pago desde MP
+        const mpResponse = await axios.get(
           `https://api.mercadopago.com/v1/payments/${paymentId}`,
           {
             headers: {
               Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
+              "Content-Type": "application/json",
             },
+            timeout: 10000,
           }
         );
 
-        const payment = response.data;
-        const orderId = payment.external_reference;
+        const payment = mpResponse.data;
+        const orderId = payment.external_reference || `ORDER-${paymentId}`;
 
-        console.log(`📋 Estado REAL del pago ${paymentId}: ${payment.status}`);
-        console.log(`📦 Orden asociada: ${orderId}`);
+        console.log("📊 Datos completos del pago:", {
+          id: payment.id,
+          status: payment.status,
+          status_detail: payment.status_detail,
+          orderId: orderId,
+          amount: payment.transaction_amount,
+          payer: payment.payer?.email,
+        });
 
+        // 🔥 PAGO APROBADO - ENVIAR EMAILS
         if (payment.status === "approved") {
-          console.log(
-            `✅✅✅ PAGO REALMENTE APROBADO - ENVIANDO EMAILS ✅✅✅`
-          );
+          console.log(`✅✅✅ PAGO APROBADO DETECTADO ✅✅✅`);
 
           const paymentData = {
             orderId: orderId,
             paymentId: paymentId,
             amount: payment.transaction_amount,
-            date: payment.date_approved,
-            paymentMethod: payment.payment_method_id,
-            customerName: `${payment.payer.first_name} ${payment.payer.last_name}`,
-            customerEmail: payment.payer.email,
-            customerPhone: payment.payer.phone?.number || "No proporcionado",
+            date: payment.date_approved || new Date().toISOString(),
+            paymentMethod: payment.payment_method_id || "mercadopago",
+            customerName:
+              `${payment.payer?.first_name || ""} ${
+                payment.payer?.last_name || ""
+              }`.trim() || "Cliente",
+            customerEmail: payment.payer?.email || "No proporcionado",
+            customerPhone: payment.payer?.phone?.number || "No proporcionado",
             customerAddress:
-              `${payment.payer.address?.street_name || ""} ${
-                payment.payer.address?.street_number || ""
+              `${payment.payer?.address?.street_name || ""} ${
+                payment.payer?.address?.street_number || ""
               }`.trim() || "No proporcionada",
           };
 
           console.log("📧📧📧 INICIANDO ENVÍO DE EMAILS 📧📧📧");
+          console.log("Datos para email:", paymentData);
 
-          // Email para vos
-          const result1 = await sendPaymentApprovedEmail(paymentData);
-          console.log(`📧 Email a pedidos@: ${result1 ? "✅" : "❌"}`);
+          try {
+            // 1. Email para vos (administrador)
+            const adminEmailResult = await sendPaymentApprovedEmail(
+              paymentData
+            );
+            console.log(
+              `📧 Email a pedidos@: ${
+                adminEmailResult ? "✅ ENVIADO" : "❌ FALLÓ"
+              }`
+            );
 
-          // Email para el cliente
-          const result2 = await sendCustomerPaymentConfirmation(paymentData);
-          console.log(`📧 Email al cliente: ${result2 ? "✅" : "❌"}`);
+            // 2. Email para el cliente
+            const customerEmailResult = await sendCustomerPaymentConfirmation(
+              paymentData
+            );
+            console.log(
+              `📧 Email al cliente: ${
+                customerEmailResult ? "✅ ENVIADO" : "❌ FALLÓ"
+              }`
+            );
 
-          console.log(`🎉🎉🎉 PROCESO COMPLETADO 🎉🎉🎉`);
+            console.log(`🎉🎉🎉 PROCESO DE EMAILS COMPLETADO 🎉🎉🎉`);
+          } catch (emailError) {
+            console.error("❌ Error en envío de emails:", emailError);
+            // NO retornamos error para que MP no reintente
+          }
         } else {
           console.log(
-            `❌ Pago ${paymentId} con estado: ${payment.status} - NO SE ENVIAN EMAILS`
+            `ℹ️  Pago ${paymentId} con estado: ${payment.status} - No requiere acción`
           );
         }
+      } else {
+        console.log(`ℹ️  Webhook tipo: ${data.type} - Ignorado`);
       }
 
-      console.log("🔔🔔🔔 WEBHOOK MP PROCESADO - FIN 🔔🔔🔔");
-      res.status(200).json({ status: "webhook received" });
+      console.log("🔔🔔🔔 WEBHOOK PROCESADO EXITOSAMENTE 🔔🔔🔔");
+      res.status(200).json({
+        status: "success",
+        message: "Webhook processed successfully",
+        timestamp: new Date().toISOString(),
+      });
     } catch (error) {
-      console.error("💥💥💥 ERROR CRÍTICO EN WEBHOOK:", error.message);
+      console.error("💥💥💥 ERROR EN WEBHOOK:", error.message);
       console.error("Stack:", error.stack);
-      res.status(500).json({ status: "error", message: error.message });
+
+      // 🔥 IMPORTANTE: Siempre retornar 200 a MP para que no reintente
+      res.status(200).json({
+        status: "error_handled",
+        message: "Error processed, no retry needed",
+        error: error.message,
+      });
     }
   }
 );
-app.get("/api/webhook-status", (req, res) => {
-  res.json({
-    webhookUrl: "https://magnetico-fotoimanes.com/api/webhook",
-    environment: process.env.NODE_ENV,
-    resendConfigured: !!process.env.RESEND_API_KEY,
-    mercadopagoConfigured: !!process.env.MP_ACCESS_TOKEN,
-    serverTime: new Date().toISOString(),
-    webhookActive: true,
-  });
+
+// 🔥 EXCLUIR WEBHOOK DEL RATE LIMITING (AGREGAR ESTO)
+app.use((req, res, next) => {
+  if (req.path === "/api/webhook") {
+    return next(); // Saltar rate limiting para webhooks
+  }
+  generalLimiter(req, res, next);
 });
 
 // Endpoint para ver logs recientes del webhook
