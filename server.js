@@ -387,43 +387,47 @@ app.post(
   express.raw({ type: "application/json", limit: "1mb" }),
   async (req, res) => {
     console.log("🔔🔔🔔 WEBHOOK MP LLAMADO - INICIO 🔔🔔🔔");
-    
+    console.log("📋 HEADERS:", req.headers);
+    console.log("🌐 IP:", req.ip);
+    console.log("📦 BODY LENGTH:", req.body?.length);
+
     try {
-      // VERIFICAR SI LLEGA ALGO
       if (!req.body || req.body.length === 0) {
         console.log("❌ Webhook llamado pero body vacío");
-        return res.status(200).json({ status: 'no body' });
+        return res.status(400).json({ error: "Body vacío" });
       }
 
       const payload = req.body.toString();
-      console.log("📦 RAW BODY:", payload);
+      console.log("📦 RAW BODY (primeros 500 chars):", payload.substring(0, 500));
       
       const data = JSON.parse(payload);
       console.log("🎯 Tipo de webhook:", data.type);
-
+      
       if (data.type === "payment") {
         const paymentId = data.data.id;
         console.log(`💰 Procesando pago: ${paymentId}`);
-
+        
         // Obtener detalles del pago
         const response = await axios.get(
           `https://api.mercadopago.com/v1/payments/${paymentId}`,
           {
             headers: {
-              Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
-            },
+              Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`
+            }
           }
         );
-
+        
         const payment = response.data;
         const orderId = payment.external_reference;
-
-        console.log(`📋 Estado del pago ${paymentId}: ${payment.status}`);
+        
+        console.log(`📋 Estado REAL del pago ${paymentId}: ${payment.status}`);
         console.log(`📦 Orden asociada: ${orderId}`);
+        console.log(`💰 Monto: ${payment.transaction_amount}`);
+        console.log(`👤 Payer: ${payment.payer.email}`);
 
-        if (payment.status === "approved") {
-          console.log(`✅✅✅ PAGO APROBADO DETECTADO ✅✅✅`);
-
+        if (payment.status === 'approved') {
+          console.log(`✅✅✅ PAGO REALMENTE APROBADO ✅✅✅`);
+          
           const paymentData = {
             orderId: orderId,
             paymentId: paymentId,
@@ -432,33 +436,33 @@ app.post(
             paymentMethod: payment.payment_method_id,
             customerName: `${payment.payer.first_name} ${payment.payer.last_name}`,
             customerEmail: payment.payer.email,
-            customerPhone: payment.payer.phone?.number || "No proporcionado",
-            customerAddress:
-              `${payment.payer.address?.street_name || ""} ${
-                payment.payer.address?.street_number || ""
-              }`.trim() || "No proporcionada",
+            customerPhone: payment.payer.phone?.number || 'No proporcionado',
+            customerAddress: `${payment.payer.address?.street_name || ''} ${payment.payer.address?.street_number || ''}`.trim() || 'No proporcionada'
           };
 
-          console.log("📧📧📧 INICIANDO ENVÍO DE EMAILS 📧📧📧");
-
+          console.log('📧📧📧 INICIANDO ENVÍO DE EMAILS 📧📧📧');
+          
           // Email para vos
           const result1 = await sendPaymentApprovedEmail(paymentData);
-          console.log(`📧 Email a pedidos@: ${result1 ? "✅" : "❌"}`);
-
+          console.log(`📧 Email a pedidos@: ${result1 ? '✅' : '❌'}`);
+          
           // Email para el cliente
           const result2 = await sendCustomerPaymentConfirmation(paymentData);
-          console.log(`📧 Email al cliente: ${result2 ? "✅" : "❌"}`);
-
-          console.log(`🎉🎉🎉 PROCESO COMPLETADO - Emails enviados 🎉🎉🎉`);
+          console.log(`📧 Email al cliente: ${result2 ? '✅' : '❌'}`);
+          
+          console.log(`🎉🎉🎉 PROCESO COMPLETADO 🎉🎉🎉`);
+        } else {
+          console.log(`❌ Pago ${paymentId} con estado: ${payment.status} - NO SE ENVIAN EMAILS`);
         }
       }
-
+      
       console.log("🔔🔔🔔 WEBHOOK MP PROCESADO - FIN 🔔🔔🔔");
-      res.status(200).json({ status: "webhook received" });
+      res.status(200).json({ status: 'webhook received' });
+      
     } catch (error) {
-      console.error("💥💥💥 ERROR CRÍTICO EN WEBHOOK:", error.message);
-      console.error("Stack:", error.stack);
-      res.status(200).json({ status: "error", message: error.message });
+      console.error('💥💥💥 ERROR CRÍTICO EN WEBHOOK:', error.message);
+      console.error('Stack:', error.stack);
+      res.status(500).json({ status: 'error', message: error.message });
     }
   }
 );
