@@ -387,13 +387,18 @@ app.post(
   express.raw({ type: "application/json", limit: "1mb" }),
   async (req, res) => {
     console.log("🔔🔔🔔 WEBHOOK MP LLAMADO - INICIO 🔔🔔🔔");
-    console.log("📋 HEADERS:", req.headers);
-
+    
     try {
-      const payload = req.body.toString();
-      const data = JSON.parse(payload);
+      // VERIFICAR SI LLEGA ALGO
+      if (!req.body || req.body.length === 0) {
+        console.log("❌ Webhook llamado pero body vacío");
+        return res.status(200).json({ status: 'no body' });
+      }
 
-      console.log("📦 BODY COMPLETO:", JSON.stringify(data, null, 2));
+      const payload = req.body.toString();
+      console.log("📦 RAW BODY:", payload);
+      
+      const data = JSON.parse(payload);
       console.log("🎯 Tipo de webhook:", data.type);
 
       if (data.type === "payment") {
