@@ -221,8 +221,8 @@ const sendPaymentApprovedEmail = async (paymentData) => {
     `;
 
     const { data, error } = await resend.emails.send({
-      from: "Magnético Fotoimanes <pedidos.magnetico@gmail.com>",
-      to: "pedidos.magnetico@gmail.com",
+      from: "Magnético Fotoimanes <diegoalami@gmail.com>",
+      to: "diegoalami@gmail.com",
       subject: `✅ PAGO APROBADO - ${paymentData.orderId} - $${paymentData.amount}`,
       html: emailHtml,
     });
@@ -307,7 +307,7 @@ const sendCustomerPaymentConfirmation = async (customerData) => {
     `;
 
     const { data, error } = await resend.emails.send({
-      from: "Magnético Fotoimanes <pedidos.magnetico@gmail.com>",
+      from: "Magnético Fotoimanes <diegoalami@gmail.com>",
       to: customerData.customerEmail,
       subject: `✅ Pago Confirmado - Pedido ${customerData.orderId}`,
       html: emailHtml,
