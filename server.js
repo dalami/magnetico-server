@@ -222,7 +222,7 @@ const sendPaymentApprovedEmail = async (paymentData) => {
 
     const { data, error } = await resend.emails.send({
       from: "Magnético Fotoimanes <pedidos@magnetico-fotoimanes.com>",
-      to: "pedidos@magnetico-fotoimanes.com",
+      to: "diegoalami@gmail.com",
       subject: `✅ PAGO APROBADO - ${paymentData.orderId} - $${paymentData.amount}`,
       html: emailHtml,
     });

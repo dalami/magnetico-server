@@ -136,7 +136,7 @@ const sendOrderReceivedEmail = async (orderData, photos) => {
 
     const { data, error } = await resend.emails.send({
       from: "Magnético Fotoimanes <pedidos@magnetico-fotoimanes.com>",
-      to: "pedidos@magnetico-fotoimanes.com",
+      to: "diegoalami@gmail.com",
       subject: `📦 Pedido ${orderData.orderId} - ${orderData.photoCount} Fotos - $${orderData.totalPrice}`,
       html: emailHtml,
       attachments: attachments,
