@@ -17,7 +17,6 @@ console.log('🔧 VARIABLES FORZADAS:', {
   NODE_ENV: process.env.NODE_ENV
 });
 
-
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -173,15 +172,14 @@ try {
   console.error("❌ Error crítico configurando Resend:", error.message);
   console.error("Stack:", error.stack);
 }
+
 // -------------------------
 // FUNCIONES DE EMAIL PARA PAGOS APROBADOS
 // -------------------------
 const sendPaymentApprovedEmail = async (paymentData) => {
   try {
     if (!resend) {
-      console.log(
-        "📧 Resend no configurado - Simulando email de pago aprobado"
-      );
+      console.log("📧 Resend no configurado - Simulando email de pago aprobado");
       console.log("💰 Pago aprobado:", paymentData);
       return true;
     }
@@ -224,12 +222,8 @@ const sendPaymentApprovedEmail = async (paymentData) => {
               <h2>💰 Información de Pago</h2>
               <p><strong>ID de Pago MP:</strong> ${paymentData.paymentId}</p>
               <p><strong>Monto:</strong> $${paymentData.amount}</p>
-              <p><strong>Fecha de pago:</strong> ${new Date(
-                paymentData.date
-              ).toLocaleString("es-AR")}</p>
-              <p><strong>Método:</strong> ${
-                paymentData.paymentMethod || "No especificado"
-              }</p>
+              <p><strong>Fecha de pago:</strong> ${new Date(paymentData.date).toLocaleString("es-AR")}</p>
+              <p><strong>Método:</strong> ${paymentData.paymentMethod || "No especificado"}</p>
             </div>
 
             <div style="background: #fff3cd; padding: 15px; border-radius: 8px; margin: 15px 0;">
@@ -306,12 +300,8 @@ const sendCustomerPaymentConfirmation = async (customerData) => {
               <p><strong>Número de orden:</strong> ${customerData.orderId}</p>
               <p><strong>ID de pago:</strong> ${customerData.paymentId}</p>
               <p><strong>Total pagado:</strong> $${customerData.amount}</p>
-              <p><strong>Fecha de pago:</strong> ${new Date(
-                customerData.date
-              ).toLocaleString("es-AR")}</p>
-              <p><strong>Método de pago:</strong> ${
-                customerData.paymentMethod || "Tarjeta"
-              }</p>
+              <p><strong>Fecha de pago:</strong> ${new Date(customerData.date).toLocaleString("es-AR")}</p>
+              <p><strong>Método de pago:</strong> ${customerData.paymentMethod || "Tarjeta"}</p>
             </div>
 
             <div style="background: #e3f2fd; padding: 15px; border-radius: 8px; margin: 20px 0;">
@@ -347,15 +337,10 @@ const sendCustomerPaymentConfirmation = async (customerData) => {
       throw new Error(`Resend error: ${error.message}`);
     }
 
-    console.log(
-      `✅ Email de confirmación de pago enviado al cliente: ${customerData.orderId}`
-    );
+    console.log(`✅ Email de confirmación de pago enviado al cliente: ${customerData.orderId}`);
     return true;
   } catch (error) {
-    console.error(
-      "❌ Error enviando confirmación de pago al cliente:",
-      error.message
-    );
+    console.error("❌ Error enviando confirmación de pago al cliente:", error.message);
     return false;
   }
 };
@@ -365,169 +350,138 @@ const sendCustomerPaymentConfirmation = async (customerData) => {
 // -------------------------
 let webhookLogs = [];
 
-app.post(
-  "/api/webhook",
-  express.raw({ type: "application/json", limit: "1mb" }),
-  async (req, res) => {
-    const logEntry = {
-      timestamp: new Date().toISOString(),
-      ip: req.ip,
-      method: "POST",
-      path: "/api/webhook",
-      bodyLength: req.body?.length,
-      userAgent: req.headers["user-agent"],
-    };
-
-    webhookLogs.push(logEntry);
-    console.log("🔔🔔🔔 WEBHOOK MP RECIBIDO 🔔🔔🔔");
-    console.log("📋 Log entry:", logEntry);
-    console.log(
-      "🔑 MP_ACCESS_TOKEN:",
-      process.env.MP_ACCESS_TOKEN ? "✅ CONFIGURADO" : "❌ FALTANTE"
-    );
-    console.log(
-      "📧 RESEND_API_KEY:",
-      process.env.RESEND_API_KEY ? "✅ CONFIGURADA" : "❌ FALTANTE"
-    );
-
-    try {
-      if (!req.body || req.body.length === 0) {
-        console.log("❌ Webhook sin body");
-        return res.status(400).json({ error: "Body vacío" });
-      }
-
-      const payload = req.body.toString();
-      console.log(`📦 Body recibido (${payload.length} bytes)`);
-      console.log("📝 Body completo:", payload);
-
-      const data = JSON.parse(payload);
-      console.log("🎯 Tipo de webhook:", data.type);
-      console.log("💰 ID de pago:", data.data?.id);
-
-      if (data.type === "payment") {
-        const paymentId = data.data.id;
-        console.log(`💰 Procesando pago: ${paymentId}`);
-
-        // 🔍 VERIFICAR CREDENCIALES MP
-        if (!process.env.MP_ACCESS_TOKEN) {
-          console.log(
-            "❌❌❌ MP_ACCESS_TOKEN NO CONFIGURADO - NO SE PUEDE VERIFICAR PAGO"
-          );
-          return res.status(200).json({ error: "MP token missing" });
-        }
-
-        console.log("🔐 Verificando pago con MP...");
-        const response = await axios.get(
-          `https://api.mercadopago.com/v1/payments/${paymentId}`,
-          {
-            headers: {
-              Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
-            },
-            timeout: 10000,
-          }
-        );
-
-        const payment = response.data;
-        const orderId = payment.external_reference || `ORDER-${paymentId}`;
-
-        console.log(`📋 Estado REAL del pago ${paymentId}: ${payment.status}`);
-        console.log(`📦 Orden asociada: ${orderId}`);
-        console.log("💳 Datos completos del pago:", {
-          status: payment.status,
-          amount: payment.transaction_amount,
-          payer_email: payment.payer?.email,
-          external_reference: payment.external_reference,
-          date_approved: payment.date_approved,
-        });
-
-        if (payment.status === "approved") {
-          console.log(
-            `✅✅✅ PAGO REALMENTE APROBADO - ENVIANDO EMAILS ✅✅✅`
-          );
-
-          const paymentData = {
-            orderId: orderId,
-            paymentId: paymentId,
-            amount: payment.transaction_amount,
-            date: payment.date_approved || new Date().toISOString(),
-            paymentMethod: payment.payment_method_id || "mercadopago",
-            customerName:
-              `${payment.payer.first_name || ""} ${
-                payment.payer.last_name || ""
-              }`.trim() || "Cliente",
-            customerEmail: payment.payer.email || "No proporcionado",
-            customerPhone: payment.payer.phone?.number || "No proporcionado",
-            customerAddress:
-              `${payment.payer.address?.street_name || ""} ${
-                payment.payer.address?.street_number || ""
-              }`.trim() || "No proporcionada",
-          };
-
-          console.log("📧📧📧 INICIANDO ENVÍO DE EMAILS 📧📧📧");
-          console.log("📤 Datos para email:", paymentData);
-
-          // Email para vos (a diegoalami@gmail.com)
-          console.log(
-            "📤 Enviando email de confirmación a diegoalami@gmail.com..."
-          );
-          const result1 = await sendPaymentApprovedEmail(paymentData);
-          console.log(
-            `📧 Email a diegoalami@gmail.com: ${
-              result1 ? "✅ ENVIADO" : "❌ FALLÓ"
-            }`
-          );
-
-          // Email para el cliente
-          if (
-            paymentData.customerEmail &&
-            paymentData.customerEmail !== "No proporcionado"
-          ) {
-            console.log(
-              `📤 Enviando confirmación al cliente: ${paymentData.customerEmail}...`
-            );
-            const result2 = await sendCustomerPaymentConfirmation(paymentData);
-            console.log(
-              `📧 Email al cliente: ${result2 ? "✅ ENVIADO" : "❌ FALLÓ"}`
-            );
-          } else {
-            console.log(
-              "❌ No hay email del cliente - No se envía confirmación"
-            );
-          }
-
-          console.log(`🎉🎉🎉 PROCESO COMPLETADO 🎉🎉🎉`);
-        } else {
-          console.log(
-            `❌ Pago ${paymentId} con estado: ${payment.status} - NO SE ENVIAN EMAILS`
-          );
-        }
-      } else {
-        console.log(`❌ Webhook tipo no payment: ${data.type} - IGNORADO`);
-      }
-
-      console.log("🔔🔔🔔 WEBHOOK MP PROCESADO - FIN 🔔🔔🔔");
-      res.status(200).json({ status: "webhook received", processed: true });
-    } catch (error) {
-      console.error("💥💥💥 ERROR CRÍTICO EN WEBHOOK:", error.message);
-      console.error("Stack:", error.stack);
-
-      // Información adicional del error
-      if (error.response) {
-        console.error("📡 Error response de MP:", {
-          status: error.response.status,
-          data: error.response.data,
-        });
-      }
-
-      res
-        .status(200)
-        .json({
-          status: "error_handled",
-          message: "Error processed, no retry needed",
-        });
-    }
+// 🔥 MIDDLEWARE DE DEBUG PARA WEBHOOK
+app.use((req, res, next) => {
+  if (req.path === '/api/webhook' && req.method === 'POST') {
+    console.log('🎯 DEBUG: POST /api/webhook recibido - Pasando al handler');
+    console.log('🔍 DEBUG: Content-Type:', req.headers['content-type']);
   }
-);
+  next();
+});
+
+app.post("/api/webhook", express.raw({ type: "application/json", limit: "1mb" }), async (req, res) => {
+  console.log("🎯🎯🎯 WEBHOOK HANDLER EJECUTADO 🎯🎯🎯");
+  
+  const logEntry = {
+    timestamp: new Date().toISOString(),
+    ip: req.ip,
+    method: "POST",
+    path: "/api/webhook",
+    bodyLength: req.body?.length,
+    userAgent: req.headers["user-agent"],
+  };
+
+  webhookLogs.push(logEntry);
+  console.log("🔔🔔🔔 WEBHOOK MP RECIBIDO 🔔🔔🔔");
+  console.log("📋 Log entry:", logEntry);
+  console.log("🔑 MP_ACCESS_TOKEN:", process.env.MP_ACCESS_TOKEN ? "✅ CONFIGURADO" : "❌ FALTANTE");
+  console.log("📧 RESEND_API_KEY:", process.env.RESEND_API_KEY ? "✅ CONFIGURADA" : "❌ FALTANTE");
+
+  try {
+    if (!req.body || req.body.length === 0) {
+      console.log("❌ Webhook sin body");
+      return res.status(400).json({ error: "Body vacío" });
+    }
+
+    const payload = req.body.toString();
+    console.log(`📦 Body recibido (${payload.length} bytes)`);
+    console.log("📝 Body completo:", payload);
+
+    const data = JSON.parse(payload);
+    console.log("🎯 Tipo de webhook:", data.type);
+    console.log("💰 ID de pago:", data.data?.id);
+
+    if (data.type === "payment") {
+      const paymentId = data.data.id;
+      console.log(`💰 Procesando pago: ${paymentId}`);
+
+      // 🔍 VERIFICAR CREDENCIALES MP
+      if (!process.env.MP_ACCESS_TOKEN) {
+        console.log("❌❌❌ MP_ACCESS_TOKEN NO CONFIGURADO - NO SE PUEDE VERIFICAR PAGO");
+        return res.status(200).json({ error: "MP token missing" });
+      }
+
+      console.log("🔐 Verificando pago con MP...");
+      const response = await axios.get(
+        `https://api.mercadopago.com/v1/payments/${paymentId}`,
+        {
+          headers: {
+            Authorization: `Bearer ${process.env.MP_ACCESS_TOKEN}`,
+          },
+          timeout: 10000,
+        }
+      );
+
+      const payment = response.data;
+      const orderId = payment.external_reference || `ORDER-${paymentId}`;
+
+      console.log(`📋 Estado REAL del pago ${paymentId}: ${payment.status}`);
+      console.log(`📦 Orden asociada: ${orderId}`);
+      console.log("💳 Datos completos del pago:", {
+        status: payment.status,
+        amount: payment.transaction_amount,
+        payer_email: payment.payer?.email,
+        external_reference: payment.external_reference,
+        date_approved: payment.date_approved,
+      });
+
+      if (payment.status === "approved") {
+        console.log(`✅✅✅ PAGO REALMENTE APROBADO - ENVIANDO EMAILS ✅✅✅`);
+
+        const paymentData = {
+          orderId: orderId,
+          paymentId: paymentId,
+          amount: payment.transaction_amount,
+          date: payment.date_approved || new Date().toISOString(),
+          paymentMethod: payment.payment_method_id || "mercadopago",
+          customerName: `${payment.payer.first_name || ""} ${payment.payer.last_name || ""}`.trim() || "Cliente",
+          customerEmail: payment.payer.email || "No proporcionado",
+          customerPhone: payment.payer.phone?.number || "No proporcionado",
+          customerAddress: `${payment.payer.address?.street_name || ""} ${payment.payer.address?.street_number || ""}`.trim() || "No proporcionada",
+        };
+
+        console.log("📧📧📧 INICIANDO ENVÍO DE EMAILS 📧📧📧");
+        console.log("📤 Datos para email:", paymentData);
+
+        // Email para vos (a diegoalami@gmail.com)
+        console.log("📤 Enviando email de confirmación a diegoalami@gmail.com...");
+        const result1 = await sendPaymentApprovedEmail(paymentData);
+        console.log(`📧 Email a diegoalami@gmail.com: ${result1 ? "✅ ENVIADO" : "❌ FALLÓ"}`);
+
+        // Email para el cliente
+        if (paymentData.customerEmail && paymentData.customerEmail !== "No proporcionado") {
+          console.log(`📤 Enviando confirmación al cliente: ${paymentData.customerEmail}...`);
+          const result2 = await sendCustomerPaymentConfirmation(paymentData);
+          console.log(`📧 Email al cliente: ${result2 ? "✅ ENVIADO" : "❌ FALLÓ"}`);
+        } else {
+          console.log("❌ No hay email del cliente - No se envía confirmación");
+        }
+
+        console.log(`🎉🎉🎉 PROCESO COMPLETADO 🎉🎉🎉`);
+      } else {
+        console.log(`❌ Pago ${paymentId} con estado: ${payment.status} - NO SE ENVIAN EMAILS`);
+      }
+    } else {
+      console.log(`❌ Webhook tipo no payment: ${data.type} - IGNORADO`);
+    }
+
+    console.log("🔔🔔🔔 WEBHOOK MP PROCESADO - FIN 🔔🔔🔔");
+    res.status(200).json({ status: "webhook received", processed: true });
+  } catch (error) {
+    console.error("💥💥💥 ERROR CRÍTICO EN WEBHOOK:", error.message);
+    console.error("Stack:", error.stack);
+
+    // Información adicional del error
+    if (error.response) {
+      console.error("📡 Error response de MP:", {
+        status: error.response.status,
+        data: error.response.data,
+      });
+    }
+
+    res.status(200).json({ status: "error_handled", message: "Error processed, no retry needed" });
+  }
+});
 
 // -------------------------
 // ENDPOINTS DE DEBUG PARA WEBHOOK
@@ -541,10 +495,7 @@ app.get("/api/webhook-status", (req, res) => {
     serverTime: new Date().toISOString(),
     webhookActive: true,
     totalWebhookCalls: webhookLogs.length,
-    lastWebhookCall:
-      webhookLogs.length > 0
-        ? webhookLogs[webhookLogs.length - 1].timestamp
-        : "never",
+    lastWebhookCall: webhookLogs.length > 0 ? webhookLogs[webhookLogs.length - 1].timestamp : "never",
   });
 });
 
@@ -563,22 +514,15 @@ app.get("/api/debug/webhook", (req, res) => {
     serverTime: new Date().toISOString(),
     mercadopago: {
       configured: !!process.env.MP_ACCESS_TOKEN,
-      tokenPreview: process.env.MP_ACCESS_TOKEN
-        ? `${process.env.MP_ACCESS_TOKEN.substring(0, 10)}...`
-        : "NOT_SET",
+      tokenPreview: process.env.MP_ACCESS_TOKEN ? `${process.env.MP_ACCESS_TOKEN.substring(0, 10)}...` : "NOT_SET",
     },
     resend: {
       configured: !!process.env.RESEND_API_KEY,
-      apiKeyPreview: process.env.RESEND_API_KEY
-        ? `${process.env.RESEND_API_KEY.substring(0, 10)}...`
-        : "NOT_SET",
+      apiKeyPreview: process.env.RESEND_API_KEY ? `${process.env.RESEND_API_KEY.substring(0, 10)}...` : "NOT_SET",
     },
     webhookStats: {
       totalCalls: webhookLogs.length,
-      lastCall:
-        webhookLogs.length > 0
-          ? webhookLogs[webhookLogs.length - 1].timestamp
-          : "never",
+      lastCall: webhookLogs.length > 0 ? webhookLogs[webhookLogs.length - 1].timestamp : "never",
     },
   });
 });
@@ -639,10 +583,7 @@ app.use((error, req, res, next) => {
 
   const statusCode = error.status || error.statusCode || 500;
   const response = {
-    error:
-      isProduction && statusCode === 500
-        ? "Error interno del servidor"
-        : error.message,
+    error: isProduction && statusCode === 500 ? "Error interno del servidor" : error.message,
     server: "DonWeb",
   };
 
@@ -664,12 +605,8 @@ const server = app.listen(PORT, "0.0.0.0", () => {
 🏠 Entorno: ${process.env.NODE_ENV || "development"}
 📅 Iniciado: ${new Date().toISOString()}
 🔗 Webhook: https://magnetico-fotoimanes.com/api/webhook
-📧 Resend: ${
-    process.env.RESEND_API_KEY ? "✅ Configurado" : "❌ No configurado"
-  }
-💰 MercadoPago: ${
-    process.env.MP_ACCESS_TOKEN ? "✅ Configurado" : "❌ No configurado"
-  }
+📧 Resend: ${process.env.RESEND_API_KEY ? "✅ Configurado" : "❌ No configurado"}
+💰 MercadoPago: ${process.env.MP_ACCESS_TOKEN ? "✅ Configurado" : "❌ No configurado"}
   `);
 });
 
