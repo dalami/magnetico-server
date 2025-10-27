@@ -4,6 +4,20 @@
 import dotenv from "dotenv";
 dotenv.config();
 
+// 🔥 FORZAR VARIABLES TEMPORALMENTE - SOLUCIÓN INMEDIATA
+process.env.RESEND_API_KEY = process.env.RESEND_API_KEY || 're_xxxxxxxxxxxxxxxxxxxxxxxxxxxx';
+process.env.MP_ACCESS_TOKEN = process.env.MP_ACCESS_TOKEN || 'TEST-xxxxxxxxxxxxxxxxxxxx';
+process.env.FRONTEND_URL = process.env.FRONTEND_URL || 'https://magnetico-fotoimanes.com';
+process.env.NODE_ENV = 'production';
+
+console.log('🔧 VARIABLES FORZADAS:', {
+  RESEND: !!process.env.RESEND_API_KEY,
+  MP: !!process.env.MP_ACCESS_TOKEN,
+  FRONTEND: process.env.FRONTEND_URL,
+  NODE_ENV: process.env.NODE_ENV
+});
+
+
 import express from "express";
 import cors from "cors";
 import helmet from "helmet";
@@ -143,18 +157,22 @@ app.get("/api/health", (_req, res) => {
 // -------------------------
 let resend;
 try {
+  // 🔥 VERIFICACIÓN MEJORADA
+  console.log('🔑 RESEND_API_KEY en config:', process.env.RESEND_API_KEY ? 'PRESENTE' : 'AUSENTE');
+  
   if (!process.env.RESEND_API_KEY) {
-    console.warn(
-      "⚠️ RESEND_API_KEY no configurada. Los emails no se enviarán."
-    );
+    console.error("❌❌❌ RESEND_API_KEY NO CONFIGURADA - EMAILS NO FUNCIONARÁN");
   } else {
     resend = new Resend(process.env.RESEND_API_KEY);
-    console.log("✅ Resend configurado correctamente");
+    console.log("✅✅✅ Resend configurado CORRECTAMENTE");
+    
+    // Test simple de Resend
+    console.log('🧪 Resend instance:', resend ? 'CREADA' : 'FALLÓ');
   }
 } catch (error) {
-  console.error("❌ Error configurando Resend:", error.message);
+  console.error("❌ Error crítico configurando Resend:", error.message);
+  console.error("Stack:", error.stack);
 }
-
 // -------------------------
 // FUNCIONES DE EMAIL PARA PAGOS APROBADOS
 // -------------------------
